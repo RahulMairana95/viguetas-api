@@ -4,7 +4,7 @@ import { db } from '../db';
 import { stock, orders, orderItems, products } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 

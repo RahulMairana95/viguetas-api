@@ -7,7 +7,7 @@ import { users, refreshTokens } from '../db/schema';
 import { config } from '../config';
 import { authMiddleware, AuthPayload } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response): Promise<void> => {

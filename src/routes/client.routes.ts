@@ -4,7 +4,7 @@ import { db } from '../db';
 import { clients, orders, orderItems, products } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
@@ -21,7 +21,8 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
 // GET /api/clients/:id
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const [client] = await db.select().from(clients).where(eq(clients.id, req.params.id));
+    const id = req.params.id as string;
+    const [client] = await db.select().from(clients).where(eq(clients.id, id));
 
     if (!client) {
       res.status(404).json({ message: 'Client not found' });
@@ -37,7 +38,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       createdAt: orders.createdAt,
     })
       .from(orders)
-      .where(eq(orders.clientId, req.params.id));
+      .where(eq(orders.clientId, id));
 
     // Get order items for each order
     const ordersWithItems = await Promise.all(
@@ -87,11 +88,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 // PUT /api/clients/:id
 router.put('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
     const { name, phone } = req.body;
 
     const [client] = await db.update(clients)
       .set({ name, phone })
-      .where(eq(clients.id, req.params.id))
+      .where(eq(clients.id, id))
       .returning();
 
     res.json(client);
@@ -103,7 +105,8 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 // DELETE /api/clients/:id
 router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    await db.delete(clients).where(eq(clients.id, req.params.id));
+    const id = req.params.id as string;
+    await db.delete(clients).where(eq(clients.id, id));
     res.json({ message: 'Client deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting client' });

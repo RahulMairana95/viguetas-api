@@ -4,7 +4,7 @@ import { db } from '../db';
 import { stock, warehouses, products } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
@@ -49,6 +49,9 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // GET /api/stock/:warehouseId/:productId
 router.get('/:warehouseId/:productId', async (req: Request, res: Response): Promise<void> => {
   try {
+    const warehouseId = req.params.warehouseId as string;
+    const productId = req.params.productId as string;
+
     const [stockItem] = await db.select({
       warehouseId: stock.warehouseId,
       productId: stock.productId,
@@ -69,8 +72,8 @@ router.get('/:warehouseId/:productId', async (req: Request, res: Response): Prom
       .innerJoin(warehouses, eq(stock.warehouseId, warehouses.id))
       .innerJoin(products, eq(stock.productId, products.id))
       .where(and(
-        eq(stock.warehouseId, req.params.warehouseId),
-        eq(stock.productId, req.params.productId)
+        eq(stock.warehouseId, warehouseId),
+        eq(stock.productId, productId)
       ));
 
     if (!stockItem) {

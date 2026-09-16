@@ -4,14 +4,14 @@ import { db } from '../db';
 import { stock, sales, clients, products, warehouses, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
 // GET /api/sales
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { warehouseId, clientId, from, to } = req.query;
+    const { warehouseId, clientId } = req.query;
 
     const conditions = [];
     if (warehouseId) conditions.push(eq(sales.warehouseId, warehouseId as string));

@@ -4,7 +4,7 @@ import { db } from '../db';
 import { stock, transfers, warehouses, products, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 

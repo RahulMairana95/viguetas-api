@@ -4,7 +4,7 @@ import { db } from '../db';
 import { productions, products, orders, users, stock, warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
@@ -85,8 +85,10 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 // PATCH /api/productions/:id/complete
 router.patch('/:id/complete', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
+
     const [production] = await db.select().from(productions)
-      .where(eq(productions.id, req.params.id));
+      .where(eq(productions.id, id));
 
     if (!production) {
       res.status(404).json({ message: 'Production not found' });
@@ -102,7 +104,7 @@ router.patch('/:id/complete', roleMiddleware('admin'), async (req: Request, res:
       // Update production status
       const [updated] = await tx.update(productions)
         .set({ status: 'completed' })
-        .where(eq(productions.id, req.params.id))
+        .where(eq(productions.id, id))
         .returning();
 
       // Find factory warehouse

@@ -4,7 +4,7 @@ import { db } from '../db';
 import { products } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
@@ -21,7 +21,8 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
 // GET /api/products/:id
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const [product] = await db.select().from(products).where(eq(products.id, req.params.id));
+    const id = req.params.id as string;
+    const [product] = await db.select().from(products).where(eq(products.id, id));
 
     if (!product) {
       res.status(404).json({ message: 'Product not found' });
@@ -55,11 +56,12 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 // PUT /api/products/:id
 router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
     const { name, material, measurement } = req.body;
 
     const [product] = await db.update(products)
       .set({ name, material, measurement })
-      .where(eq(products.id, req.params.id))
+      .where(eq(products.id, id))
       .returning();
 
     res.json(product);
@@ -71,7 +73,8 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 // DELETE /api/products/:id
 router.delete('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
-    await db.delete(products).where(eq(products.id, req.params.id));
+    const id = req.params.id as string;
+    await db.delete(products).where(eq(products.id, id));
     res.json({ message: 'Product deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting product' });

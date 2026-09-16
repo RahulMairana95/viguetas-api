@@ -1,10 +1,10 @@
-import express from 'express';
+import express, { Express } from 'express';
 import cors from 'cors';
 import { config } from './config';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 
-const app = express();
+const app: Express = express();
 
 // Middleware
 app.use(cors({ origin: config.frontendUrl, credentials: true }));

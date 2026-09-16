@@ -10,7 +10,7 @@ import orderRoutes from './order.routes';
 import productionRoutes from './production.routes';
 import stockRequestRoutes from './stockRequest.routes';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use('/auth', authRoutes);
 router.use('/warehouses', warehouseRoutes);

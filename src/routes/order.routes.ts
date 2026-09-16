@@ -4,7 +4,7 @@ import { db } from '../db';
 import { orders, orderItems, clients, products, users, productions } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
@@ -71,6 +71,8 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // GET /api/orders/:id
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
+
     const [order] = await db.select({
       id: orders.id,
       clientId: orders.clientId,
@@ -91,7 +93,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       .from(orders)
       .innerJoin(clients, eq(orders.clientId, clients.id))
       .innerJoin(users, eq(orders.userId, users.id))
-      .where(eq(orders.id, req.params.id));
+      .where(eq(orders.id, id));
 
     if (!order) {
       res.status(404).json({ message: 'Order not found' });
@@ -111,11 +113,11 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     })
       .from(orderItems)
       .innerJoin(products, eq(orderItems.productId, products.id))
-      .where(eq(orderItems.orderId, req.params.id));
+      .where(eq(orderItems.orderId, id));
 
     // Get productions for this order
     const orderProductions = await db.select().from(productions)
-      .where(eq(productions.orderId, req.params.id));
+      .where(eq(productions.orderId, id));
 
     res.json({ ...order, items, productions: orderProductions });
   } catch (error) {
@@ -165,6 +167,7 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 // PATCH /api/orders/:id/status
 router.patch('/:id/status', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
+    const id = req.params.id as string;
     const { status } = req.body;
 
     if (!status) {
@@ -179,7 +182,7 @@ router.patch('/:id/status', roleMiddleware('admin'), async (req: Request, res: R
 
     const [order] = await db.update(orders)
       .set({ status })
-      .where(eq(orders.id, req.params.id))
+      .where(eq(orders.id, id))
       .returning();
 
     res.json(order);

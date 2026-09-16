@@ -71,6 +71,7 @@ export const orders = pgTable('orders', {
   deliveryPlace: varchar('delivery_place', { length: 500 }).notNull(),
   deliveryDate: timestamp('delivery_date').notNull(),
   status: orderStatusEnum('status').notNull().default('pending'),
+  userId: uuid('user_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
