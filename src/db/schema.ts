@@ -18,6 +18,7 @@ export const users = pgTable('users', {
   email: varchar('email', { length: 255 }).notNull().unique(),
   password: varchar('password', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
+  lastName: varchar('last_name', { length: 255 }),
   role: roleEnum('role').notNull().default('store'),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id),
   createdAt: timestamp('created_at').defaultNow(),
