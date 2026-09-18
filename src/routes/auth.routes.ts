@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { eq } from 'drizzle-orm';
+
 import { db } from '../db';
 import { users, refreshTokens } from '../db/schema';
 import { config } from '../config';
@@ -12,16 +13,16 @@ const router: ReturnType<typeof Router> = Router();
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, name, role, warehouseId } = req.body;
+    const { email, password, name, lastName, role, warehouseId } = req.body;
 
     if (!email || !password || !name) {
-      res.status(400).json({ message: 'Email, password and name are required' });
+      res.status(400).json({ message: 'Email, password and name are required', status: 'error', data: null });
       return;
     }
 
     const [existingUser] = await db.select().from(users).where(eq(users.email, email));
     if (existingUser) {
-      res.status(409).json({ message: 'Email already registered' });
+      res.status(409).json({ message: 'Email already registered', status: 'error', data: null });
       return;
     }
 
@@ -31,20 +32,22 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       email,
       password: hashedPassword,
       name,
+      lastName: lastName || null,
       role: role || 'store',
       warehouseId: warehouseId || null,
     }).returning({
       id: users.id,
       email: users.email,
       name: users.name,
+      lastName: users.lastName,
       role: users.role,
       warehouseId: users.warehouseId,
       createdAt: users.createdAt,
     });
 
-    res.status(201).json({ message: 'User created', user });
+    res.status(201).json({ message: 'User created', status: 'success', data: user });
   } catch (error) {
-    res.status(500).json({ message: 'Error creating user' });
+    res.status(500).json({ message: 'Error creating user', status: 'error', data: null });
   }
 });
 
@@ -54,19 +57,19 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      res.status(400).json({ message: 'Email and password are required' });
+      res.status(400).json({ message: 'Email and password are required', status: 'error', data: null });
       return;
     }
 
     const [user] = await db.select().from(users).where(eq(users.email, email));
     if (!user) {
-      res.status(401).json({ message: 'Invalid credentials' });
+      res.status(401).json({ message: 'Invalid credentials', status: 'error', data: null });
       return;
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      res.status(401).json({ message: 'Invalid credentials' });
+      res.status(401).json({ message: 'Invalid credentials', status: 'error', data: null });
       return;
     }
 
@@ -87,18 +90,20 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
     res.json({
       message: 'Login successful',
-      accessToken,
-      refreshToken,
-      user: {
+      status: 'success',
+      data: {
         id: user.id,
         email: user.email,
         name: user.name,
+        lastName: user.lastName,
         role: user.role,
         warehouseId: user.warehouseId,
+        accessToken,
+        refreshToken,
       },
     });
   } catch (error) {
-    res.status(500).json({ message: 'Error during login' });
+    res.status(500).json({ message: 'Error during login', status: 'error', data: null });
   }
 });
 
@@ -108,14 +113,14 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
     const { refreshToken } = req.body;
 
     if (!refreshToken) {
-      res.status(400).json({ message: 'Refresh token required' });
+      res.status(400).json({ message: 'Refresh token required', status: 'error', data: null });
       return;
     }
 
     const [storedToken] = await db.select().from(refreshTokens).where(eq(refreshTokens.token, refreshToken));
 
     if (!storedToken || storedToken.expiresAt < new Date()) {
-      res.status(401).json({ message: 'Invalid or expired refresh token' });
+      res.status(401).json({ message: 'Invalid or expired refresh token', status: 'error', data: null });
       return;
     }
 
@@ -127,9 +132,9 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
       { expiresIn: '1h' }
     );
 
-    res.json({ accessToken: newAccessToken });
+    res.json({ message: 'Token refreshed', status: 'success', data: { accessToken: newAccessToken } });
   } catch (error) {
-    res.status(401).json({ message: 'Invalid refresh token' });
+    res.status(401).json({ message: 'Invalid refresh token', status: 'error', data: null });
   }
 });
 
@@ -142,32 +147,33 @@ router.post('/logout', authMiddleware, async (req: Request, res: Response): Prom
       await db.delete(refreshTokens).where(eq(refreshTokens.token, refreshToken));
     }
 
-    res.json({ message: 'Logged out successfully' });
+    res.json({ message: 'Logged out successfully', status: 'success', data: null });
   } catch (error) {
-    res.status(500).json({ message: 'Error during logout' });
+    res.status(500).json({ message: 'Error during logout', status: 'error', data: null });
   }
 });
 
-// GET /api/auth/me
-router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+// GET /api/auth/profile
+router.get('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const [user] = await db.select({
       id: users.id,
       email: users.email,
       name: users.name,
+      lastName: users.lastName,
       role: users.role,
       warehouseId: users.warehouseId,
       createdAt: users.createdAt,
     }).from(users).where(eq(users.id, req.user!.userId));
 
     if (!user) {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: 'User not found', status: 'error', data: null });
       return;
     }
 
-    res.json({ user });
+    res.json({ message: 'User found', status: 'success', data: user });
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching user' });
+    res.status(500).json({ message: 'Error fetching user', status: 'error', data: null });
   }
 });
 

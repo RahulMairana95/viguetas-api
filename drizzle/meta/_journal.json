@@ -8,6 +8,13 @@
       "when": 1789590536857,
       "tag": "0000_previous_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789768829821,
+      "tag": "0001_violet_blindfold",
+      "breakpoints": true
     }
   ]
 }
