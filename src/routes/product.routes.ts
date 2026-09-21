@@ -16,17 +16,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    console.log('search:', search, 'page:', page, 'limit:', limit);
-
     const whereClause = search ? ilike(products.name, `%${search}%`) : undefined;
 
-    console.log('whereClause:', whereClause);
-
     const [{ total }] = await db.select({ total: count() }).from(products).where(whereClause);
-    console.log('total:', total);
-
     const data = await db.select().from(products).where(whereClause).limit(limit).offset(offset);
-    console.log('data length:', data.length);
 
     res.json({
       data,
@@ -38,7 +31,6 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       }
     });
   } catch (error) {
-    console.error('Error:', error);
     res.status(500).json({ message: 'Error fetching products' });
   }
 });
