@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, and, count, ilike, or } from 'drizzle-orm';
+import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { productions, products, orders, users, stock, warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -60,6 +60,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       .leftJoin(orders, eq(productions.orderId, orders.id))
       .innerJoin(users, eq(productions.userId, users.id))
       .where(whereClause)
+      .orderBy(desc(productions.updatedAt))
       .limit(limit)
       .offset(offset);
 
@@ -124,7 +125,7 @@ router.patch('/:id/complete', roleMiddleware('admin'), async (req: Request, res:
     const result = await db.transaction(async (tx) => {
       // Update production status
       const [updated] = await tx.update(productions)
-        .set({ status: 'completed' })
+        .set({ status: 'completed', updatedAt: new Date() })
         .where(eq(productions.id, id))
         .returning();
 

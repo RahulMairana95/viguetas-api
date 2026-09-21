@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, and, count, ilike, or } from 'drizzle-orm';
+import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { stock, warehouses, products } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
@@ -50,6 +50,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       .innerJoin(warehouses, eq(stock.warehouseId, warehouses.id))
       .innerJoin(products, eq(stock.productId, products.id))
       .where(whereClause)
+      .orderBy(desc(stock.updatedAt))
       .limit(limit)
       .offset(offset);
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, count, ilike } from 'drizzle-orm';
+import { eq, count, ilike, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { products } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -19,7 +19,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const whereClause = search ? ilike(products.name, `%${search}%`) : undefined;
 
     const [{ total }] = await db.select({ total: count() }).from(products).where(whereClause);
-    const data = await db.select().from(products).where(whereClause).limit(limit).offset(offset);
+    const data = await db.select().from(products).where(whereClause).orderBy(desc(products.updatedAt)).limit(limit).offset(offset);
 
     res.json({
       data,
@@ -89,7 +89,7 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
     }
 
     const [product] = await db.update(products)
-      .set({ name, productType, measurement, price, description })
+      .set({ name, productType, measurement, price, description, updatedAt: new Date() })
       .where(eq(products.id, id))
       .returning();
 

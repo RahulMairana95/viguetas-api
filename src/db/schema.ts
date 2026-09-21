@@ -12,6 +12,8 @@ export const warehouses = pgTable('warehouses', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   type: warehouseTypeEnum('type').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const users = pgTable('users', {
@@ -22,7 +24,8 @@ export const users = pgTable('users', {
   lastName: varchar('last_name', { length: 255 }),
   role: roleEnum('role').notNull().default('store'),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id),
-  createdAt: timestamp('created_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const products = pgTable('products', {
@@ -32,12 +35,16 @@ export const products = pgTable('products', {
   measurement: varchar('measurement', { length: 50 }).notNull(), // e.g. 1m, 2m, 4.6m, 0.12x0.44x100
   price: decimal('price', { precision: 10, scale: 2 }),
   description: text('description'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const stock = pgTable('stock', {
   warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
   productId: uuid('product_id').references(() => products.id).notNull(),
   quantity: integer('quantity').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
   warehouseProductUnique: uniqueIndex('stock_warehouse_product_unique').on(table.warehouseId, table.productId),
 }));
@@ -49,13 +56,16 @@ export const transfers = pgTable('transfers', {
   destinationId: uuid('destination_id').references(() => warehouses.id).notNull(),
   quantity: integer('quantity').notNull(),
   userId: uuid('user_id').references(() => users.id).notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const clients = pgTable('clients', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 50 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const sales = pgTable('sales', {
@@ -67,6 +77,8 @@ export const sales = pgTable('sales', {
   unitPrice: decimal('unit_price', { precision: 10, scale: 2 }),
   date: timestamp('date').defaultNow(),
   userId: uuid('user_id').references(() => users.id).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const orders = pgTable('orders', {
@@ -76,7 +88,8 @@ export const orders = pgTable('orders', {
   deliveryDate: timestamp('delivery_date').notNull(),
   status: orderStatusEnum('status').notNull().default('pending'),
   userId: uuid('user_id').references(() => users.id).notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const orderItems = pgTable('order_items', {
@@ -95,6 +108,8 @@ export const productions = pgTable('productions', {
   date: timestamp('date').defaultNow(),
   userId: uuid('user_id').references(() => users.id).notNull(),
   notes: varchar('notes', { length: 500 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const refreshTokens = pgTable('refresh_tokens', {
@@ -102,5 +117,6 @@ export const refreshTokens = pgTable('refresh_tokens', {
   token: varchar('token', { length: 500 }).notNull().unique(),
   userId: uuid('user_id').references(() => users.id).notNull(),
   expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

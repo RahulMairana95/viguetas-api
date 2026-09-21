@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, count, ilike, or } from 'drizzle-orm';
+import { eq, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -21,7 +21,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     ) : undefined;
 
     const [{ total }] = await db.select({ total: count() }).from(warehouses).where(whereClause);
-    const data = await db.select().from(warehouses).where(whereClause).limit(limit).offset(offset);
+    const data = await db.select().from(warehouses).where(whereClause).orderBy(desc(warehouses.updatedAt)).limit(limit).offset(offset);
 
     res.json({
       data,
@@ -84,7 +84,7 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
     const { name, type } = req.body;
 
     const [warehouse] = await db.update(warehouses)
-      .set({ name, type })
+      .set({ name, type, updatedAt: new Date() })
       .where(eq(warehouses.id, id))
       .returning();
 
