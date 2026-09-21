@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, count } from 'drizzle-orm';
+import { eq, count, ilike, or } from 'drizzle-orm';
 import { db } from '../db';
 import { clients, orders, orderItems, products } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
@@ -8,15 +8,21 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/clients
+// GET /api/clients?search=...
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    const search = (req.query.search as string) || '';
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const [{ total }] = await db.select({ total: count() }).from(clients);
-    const data = await db.select().from(clients).limit(limit).offset(offset);
+    const whereClause = search ? or(
+      ilike(clients.name, `%${search}%`),
+      ilike(clients.phone, `%${search}%`)
+    ) : undefined;
+
+    const [{ total }] = await db.select({ total: count() }).from(clients).where(whereClause);
+    const data = await db.select().from(clients).where(whereClause).limit(limit).offset(offset);
 
     res.json({
       data,
@@ -63,7 +69,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
           product: {
             id: products.id,
             name: products.name,
-            material: products.material,
+            productType: products.productType,
             measurement: products.measurement,
           },
         })

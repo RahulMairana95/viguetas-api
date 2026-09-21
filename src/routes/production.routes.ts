@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, and, count } from 'drizzle-orm';
+import { eq, and, count, ilike, or } from 'drizzle-orm';
 import { db } from '../db';
 import { productions, products, orders, users, stock, warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -8,14 +8,19 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/productions
+// GET /api/productions?search=...
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    const search = (req.query.search as string) || '';
     const { status, orderId } = req.query;
 
     const conditions = [];
     if (status) conditions.push(eq(productions.status, status as 'pending' | 'completed'));
     if (orderId) conditions.push(eq(productions.orderId, orderId as string));
+    if (search) conditions.push(or(
+      ilike(products.name, `%${search}%`),
+      ilike(productions.notes, `%${search}%`)
+    ));
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -37,7 +42,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       product: {
         id: products.id,
         name: products.name,
-        material: products.material,
+        productType: products.productType,
         measurement: products.measurement,
       },
       order: {

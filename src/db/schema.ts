@@ -1,11 +1,12 @@
 import {
-  pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex,
+  pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex, text,
 } from 'drizzle-orm/pg-core';
 
 export const roleEnum = pgEnum('role', ['admin', 'store']);
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['factory', 'store']);
 export const orderStatusEnum = pgEnum('order_status', ['pending', 'completed', 'cancelled']);
 export const productionStatusEnum = pgEnum('production_status', ['pending', 'completed']);
+export const productTypeEnum = pgEnum('product_type', ['vigueta', 'plastoformo']);
 
 export const warehouses = pgTable('warehouses', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -27,8 +28,10 @@ export const users = pgTable('users', {
 export const products = pgTable('products', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
-  material: varchar('material', { length: 100 }).notNull(),
-  measurement: varchar('measurement', { length: 50 }).notNull(),
+  productType: productTypeEnum('product_type').notNull(),
+  measurement: varchar('measurement', { length: 50 }).notNull(), // e.g. 1m, 2m, 4.6m, 0.12x0.44x100
+  price: decimal('price', { precision: 10, scale: 2 }),
+  description: text('description'),
 });
 
 export const stock = pgTable('stock', {
