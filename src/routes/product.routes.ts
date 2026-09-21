@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, count, ilike, or } from 'drizzle-orm';
+import { eq, count, ilike } from 'drizzle-orm';
 import { db } from '../db';
 import { products } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -16,14 +16,17 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const whereClause = search ? or(
-      ilike(products.name, `%${search}%`),
-      ilike(products.description, `%${search}%`),
-      ilike(products.measurement, `%${search}%`)
-    ) : undefined;
+    console.log('search:', search, 'page:', page, 'limit:', limit);
+
+    const whereClause = search ? ilike(products.name, `%${search}%`) : undefined;
+
+    console.log('whereClause:', whereClause);
 
     const [{ total }] = await db.select({ total: count() }).from(products).where(whereClause);
+    console.log('total:', total);
+
     const data = await db.select().from(products).where(whereClause).limit(limit).offset(offset);
+    console.log('data length:', data.length);
 
     res.json({
       data,
@@ -35,6 +38,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       }
     });
   } catch (error) {
+    console.error('Error:', error);
     res.status(500).json({ message: 'Error fetching products' });
   }
 });
