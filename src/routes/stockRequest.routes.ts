@@ -11,7 +11,7 @@ router.use(authMiddleware);
 // GET /api/stock-requests?search=... (needs report - calculated on the fly)
 router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const search = (req.query.search as string) || '';
+    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     // Get all pending orders with their items
     const pendingOrders = await db.select({
       orderId: orders.id,
