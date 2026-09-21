@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, count, ilike, or } from 'drizzle-orm';
+import { eq, count, ilike } from 'drizzle-orm';
 import { db } from '../db';
 import { products } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -11,16 +11,12 @@ router.use(authMiddleware);
 // GET /api/products?search=...
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const search = (req.query.search as string) || '';
+    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const whereClause = search ? or(
-      ilike(products.name, `%${search}%`),
-      ilike(products.description, `%${search}%`),
-      ilike(products.measurement, `%${search}%`)
-    ) : undefined;
+    const whereClause = search ? ilike(products.name, `%${search}%`) : undefined;
 
     const [{ total }] = await db.select({ total: count() }).from(products).where(whereClause);
     const data = await db.select().from(products).where(whereClause).limit(limit).offset(offset);

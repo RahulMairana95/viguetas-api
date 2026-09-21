@@ -11,7 +11,7 @@ router.use(authMiddleware);
 // GET /api/sales?search=...
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const search = (req.query.search as string) || '';
+    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { warehouseId, clientId } = req.query;
 
     const conditions = [];
