@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, count } from 'drizzle-orm';
 import { db } from '../db';
 import { stock, transfers, warehouses, products, users } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
@@ -19,6 +19,12 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     if (productId) conditions.push(eq(transfers.productId, productId as string));
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+
+    const [{ total }] = await db.select({ total: count() }).from(transfers).where(whereClause);
 
     const allTransfers = await db.select({
       id: transfers.id,
@@ -52,9 +58,19 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       .innerJoin(warehouses, eq(transfers.originId, warehouses.id))
       .innerJoin(warehouses, eq(transfers.destinationId, warehouses.id))
       .innerJoin(users, eq(transfers.userId, users.id))
-      .where(whereClause);
+      .where(whereClause)
+      .limit(limit)
+      .offset(offset);
 
-    res.json(allTransfers);
+    res.json({
+      data: allTransfers,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching transfers' });
   }

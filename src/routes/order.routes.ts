@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, count } from 'drizzle-orm';
 import { db } from '../db';
 import { orders, orderItems, clients, products, users, productions } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -18,6 +18,12 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     if (clientId) conditions.push(eq(orders.clientId, clientId as string));
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+
+    const [{ total }] = await db.select({ total: count() }).from(orders).where(whereClause);
 
     const allOrders = await db.select({
       id: orders.id,
@@ -39,7 +45,9 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       .from(orders)
       .innerJoin(clients, eq(orders.clientId, clients.id))
       .innerJoin(users, eq(orders.userId, users.id))
-      .where(whereClause);
+      .where(whereClause)
+      .limit(limit)
+      .offset(offset);
 
     // Get items for each order
     const ordersWithItems = await Promise.all(
@@ -62,7 +70,15 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       })
     );
 
-    res.json(ordersWithItems);
+    res.json({
+      data: ordersWithItems,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching orders' });
   }
