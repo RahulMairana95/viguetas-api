@@ -11,7 +11,7 @@ router.use(authMiddleware);
 // GET /api/products?search=...
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const search = (req.query.search as string) || '';
+    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
