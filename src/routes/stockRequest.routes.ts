@@ -9,7 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 router.use(authMiddleware);
 
 // GET /api/stock-requests (needs report - calculated on the fly)
-router.get('/', roleMiddleware('admin'), async (_req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     // Get all pending orders with their items
     const pendingOrders = await db.select({
@@ -70,7 +70,21 @@ router.get('/', roleMiddleware('admin'), async (_req: Request, res: Response): P
     // Sort by deficit (highest first)
     result.sort((a, b) => b.deficit - a.deficit);
 
-    res.json(result);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+    
+    const paginatedResult = result.slice(offset, offset + limit);
+
+    res.json({
+      data: paginatedResult,
+      pagination: {
+        page,
+        limit,
+        total: result.length,
+        totalPages: Math.ceil(result.length / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error calculating stock needs' });
   }

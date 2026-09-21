@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, count } from 'drizzle-orm';
 import { db } from '../db';
 import { warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -9,10 +9,24 @@ const router: ReturnType<typeof Router> = Router();
 router.use(authMiddleware);
 
 // GET /api/warehouses
-router.get('/', async (_req: Request, res: Response): Promise<void> => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const allWarehouses = await db.select().from(warehouses);
-    res.json(allWarehouses);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+
+    const [{ total }] = await db.select({ total: count() }).from(warehouses);
+    const data = await db.select().from(warehouses).limit(limit).offset(offset);
+
+    res.json({
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching warehouses' });
   }
