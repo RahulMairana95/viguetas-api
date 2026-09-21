@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, count } from 'drizzle-orm';
+import { eq, count, ilike, or } from 'drizzle-orm';
 import { db } from '../db';
 import { warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -8,15 +8,20 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/warehouses
+// GET /api/warehouses?search=...
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    const search = (req.query.search as string) || '';
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const [{ total }] = await db.select({ total: count() }).from(warehouses);
-    const data = await db.select().from(warehouses).limit(limit).offset(offset);
+    const whereClause = search ? or(
+      ilike(warehouses.name, `%${search}%`)
+    ) : undefined;
+
+    const [{ total }] = await db.select({ total: count() }).from(warehouses).where(whereClause);
+    const data = await db.select().from(warehouses).where(whereClause).limit(limit).offset(offset);
 
     res.json({
       data,

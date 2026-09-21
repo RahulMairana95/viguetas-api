@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, and, count } from 'drizzle-orm';
+import { eq, and, count, ilike, or } from 'drizzle-orm';
 import { db } from '../db';
 import { stock, warehouses, products } from '../db/schema';
 import { authMiddleware } from '../middleware/auth.middleware';
@@ -8,14 +8,19 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/stock
+// GET /api/stock?search=...
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    const search = (req.query.search as string) || '';
     const { warehouseId, productId } = req.query;
 
     const conditions = [];
     if (warehouseId) conditions.push(eq(stock.warehouseId, warehouseId as string));
     if (productId) conditions.push(eq(stock.productId, productId as string));
+    if (search) conditions.push(or(
+      ilike(products.name, `%${search}%`),
+      ilike(warehouses.name, `%${search}%`)
+    ));
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -37,7 +42,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       product: {
         id: products.id,
         name: products.name,
-        material: products.material,
+        productType: products.productType,
         measurement: products.measurement,
       },
     })
@@ -80,7 +85,7 @@ router.get('/:warehouseId/:productId', async (req: Request, res: Response): Prom
       product: {
         id: products.id,
         name: products.name,
-        material: products.material,
+        productType: products.productType,
         measurement: products.measurement,
       },
     })

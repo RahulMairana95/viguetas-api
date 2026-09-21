@@ -8,9 +8,10 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/stock-requests (needs report - calculated on the fly)
+// GET /api/stock-requests?search=... (needs report - calculated on the fly)
 router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
+    const search = (req.query.search as string) || '';
     // Get all pending orders with their items
     const pendingOrders = await db.select({
       orderId: orders.id,
@@ -70,19 +71,24 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
     // Sort by deficit (highest first)
     result.sort((a, b) => b.deficit - a.deficit);
 
+    // Filter by search term
+    const filteredResult = search
+      ? result.filter(item => item.product?.name?.toLowerCase().includes(search.toLowerCase()))
+      : result;
+
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
     
-    const paginatedResult = result.slice(offset, offset + limit);
+    const paginatedResult = filteredResult.slice(offset, offset + limit);
 
     res.json({
       data: paginatedResult,
       pagination: {
         page,
         limit,
-        total: result.length,
-        totalPages: Math.ceil(result.length / limit)
+        total: filteredResult.length,
+        totalPages: Math.ceil(filteredResult.length / limit)
       }
     });
   } catch (error) {
