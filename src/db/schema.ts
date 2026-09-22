@@ -12,6 +12,8 @@ export const warehouses = pgTable('warehouses', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   type: warehouseTypeEnum('type').notNull(),
+  address: varchar('address', { length: 500 }),
+  phone: varchar('phone', { length: 50 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

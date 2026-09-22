@@ -57,7 +57,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 // POST /api/warehouses
 router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, type } = req.body;
+    const { name, type, address, phone } = req.body;
 
     if (!name || !type) {
       res.status(400).json({ message: 'Name and type are required' });
@@ -69,7 +69,7 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
       return;
     }
 
-    const [warehouse] = await db.insert(warehouses).values({ name, type }).returning();
+    const [warehouse] = await db.insert(warehouses).values({ name, type, address, phone }).returning();
 
     res.status(201).json(warehouse);
   } catch (error) {
@@ -81,10 +81,10 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { name, type } = req.body;
+    const { name, type, address, phone } = req.body;
 
     const [warehouse] = await db.update(warehouses)
-      .set({ name, type, updatedAt: new Date() })
+      .set({ name, type, address, phone, updatedAt: new Date() })
       .where(eq(warehouses.id, id))
       .returning();
 

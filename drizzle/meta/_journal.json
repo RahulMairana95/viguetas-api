@@ -29,6 +29,13 @@
       "when": 1758600000000,
       "tag": "0003_add_timestamps",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1758700000000,
+      "tag": "0004_add_warehouse_address_phone",
+      "breakpoints": true
     }
   ]
 }
