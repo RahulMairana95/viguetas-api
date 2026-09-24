@@ -177,4 +177,66 @@ router.get('/profile', authMiddleware, async (req: Request, res: Response): Prom
   }
 });
 
+// PATCH /api/auth/profile
+router.patch('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, lastName, password, role, warehouseId } = req.body;
+
+    if (name === undefined && lastName === undefined && password === undefined && role === undefined && warehouseId === undefined) {
+      res.status(400).json({ message: 'No fields to update', status: 'error', data: null });
+      return;
+    }
+
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (name !== undefined) updateData.name = name;
+    if (lastName !== undefined) updateData.lastName = lastName;
+    if (password !== undefined) updateData.password = await bcrypt.hash(password, 10);
+    if (role !== undefined) updateData.role = role;
+    if (warehouseId !== undefined) updateData.warehouseId = warehouseId;
+
+    const [user] = await db.update(users)
+      .set(updateData)
+      .where(eq(users.id, req.user!.userId))
+      .returning({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        lastName: users.lastName,
+        role: users.role,
+        warehouseId: users.warehouseId,
+        updatedAt: users.updatedAt,
+      });
+
+    if (!user) {
+      res.status(404).json({ message: 'User not found', status: 'error', data: null });
+      return;
+    }
+
+    res.json({ message: 'User updated', status: 'success', data: user });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating user', status: 'error', data: null });
+  }
+});
+
+// DELETE /api/auth/profile
+router.delete('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    await db.delete(refreshTokens).where(eq(refreshTokens.userId, req.user!.userId));
+
+    const [deleted] = await db.delete(users)
+      .where(eq(users.id, req.user!.userId))
+      .returning({ id: users.id, email: users.email });
+
+    if (!deleted) {
+      res.status(404).json({ message: 'User not found', status: 'error', data: null });
+      return;
+    }
+
+    res.json({ message: 'User deleted', status: 'success', data: null });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting user', status: 'error', data: null });
+  }
+});
+
 export default router;
