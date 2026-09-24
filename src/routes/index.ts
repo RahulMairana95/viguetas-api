@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
+import userRoutes from './user.routes';
 import warehouseRoutes from './warehouse.routes';
 import productRoutes from './product.routes';
 import stockRoutes from './stock.routes';
@@ -13,6 +14,7 @@ import stockRequestRoutes from './stockRequest.routes';
 const router: ReturnType<typeof Router> = Router();
 
 router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
 router.use('/warehouses', warehouseRoutes);
 router.use('/products', productRoutes);
 router.use('/stock', stockRoutes);
