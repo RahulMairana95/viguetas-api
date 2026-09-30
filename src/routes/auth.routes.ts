@@ -180,9 +180,9 @@ router.get('/profile', authMiddleware, async (req: Request, res: Response): Prom
 // PATCH /api/auth/profile
 router.patch('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, lastName, password, role, warehouseId } = req.body;
+    const { name, lastName, password } = req.body;
 
-    if (name === undefined && lastName === undefined && password === undefined && role === undefined && warehouseId === undefined) {
+    if (name === undefined && lastName === undefined && password === undefined) {
       res.status(400).json({ message: 'No fields to update', status: 'error', data: null });
       return;
     }
@@ -192,8 +192,6 @@ router.patch('/profile', authMiddleware, async (req: Request, res: Response): Pr
     if (name !== undefined) updateData.name = name;
     if (lastName !== undefined) updateData.lastName = lastName;
     if (password !== undefined) updateData.password = await bcrypt.hash(password, 10);
-    if (role !== undefined) updateData.role = role;
-    if (warehouseId !== undefined) updateData.warehouseId = warehouseId;
 
     const [user] = await db.update(users)
       .set(updateData)
