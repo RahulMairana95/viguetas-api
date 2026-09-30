@@ -28,7 +28,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const [{ total }] = await db.select({ total: count() }).from(productions).where(whereClause);
+    const [{ total }] = await db.select({ total: count() })
+      .from(productions)
+      .innerJoin(products, eq(productions.productId, products.id))
+      .where(whereClause);
 
     const allProductions = await db.select({
       id: productions.id,

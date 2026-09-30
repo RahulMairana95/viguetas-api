@@ -28,7 +28,10 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const [{ total }] = await db.select({ total: count() }).from(orders).where(whereClause);
+    const [{ total }] = await db.select({ total: count() })
+      .from(orders)
+      .innerJoin(clients, eq(orders.clientId, clients.id))
+      .where(whereClause);
 
     const allOrders = await db.select({
       id: orders.id,

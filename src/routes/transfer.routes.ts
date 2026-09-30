@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../db';
 import { stock, transfers, warehouses, products, users } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+
+const warehousesDest = alias(warehouses, 'warehouses_dest');
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -26,7 +29,10 @@ router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Resp
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const [{ total }] = await db.select({ total: count() }).from(transfers).where(whereClause);
+    const [{ total }] = await db.select({ total: count() })
+      .from(transfers)
+      .innerJoin(products, eq(transfers.productId, products.id))
+      .where(whereClause);
 
     const allTransfers = await db.select({
       id: transfers.id,
@@ -47,8 +53,8 @@ router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Resp
         name: warehouses.name,
       },
       destination: {
-        id: warehouses.id,
-        name: warehouses.name,
+        id: warehousesDest.id,
+        name: warehousesDest.name,
       },
       user: {
         id: users.id,
@@ -58,7 +64,7 @@ router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Resp
       .from(transfers)
       .innerJoin(products, eq(transfers.productId, products.id))
       .innerJoin(warehouses, eq(transfers.originId, warehouses.id))
-      .innerJoin(warehouses, eq(transfers.destinationId, warehouses.id))
+      .innerJoin(warehousesDest, eq(transfers.destinationId, warehousesDest.id))
       .innerJoin(users, eq(transfers.userId, users.id))
       .where(whereClause)
       .orderBy(desc(transfers.updatedAt))
