@@ -2,14 +2,14 @@ import { Router, Request, Response } from 'express';
 import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { stock, warehouses, products } from '../db/schema';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
 // GET /api/stock?search=...
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { warehouseId, productId } = req.query;
@@ -69,7 +69,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/stock/:warehouseId/:productId
-router.get('/:warehouseId/:productId', async (req: Request, res: Response): Promise<void> => {
+router.get('/:warehouseId/:productId', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const warehouseId = req.params.warehouseId as string;
     const productId = req.params.productId as string;
@@ -110,7 +110,7 @@ router.get('/:warehouseId/:productId', async (req: Request, res: Response): Prom
 });
 
 // POST /api/stock (upsert)
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { warehouseId, productId, quantity } = req.body;
 

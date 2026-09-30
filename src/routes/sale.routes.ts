@@ -2,14 +2,14 @@ import { Router, Request, Response } from 'express';
 import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { stock, sales, clients, products, warehouses, users } from '../db/schema';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
 // GET /api/sales?search=...
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { warehouseId, clientId } = req.query;
@@ -83,7 +83,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/sales
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { clientId, productId, warehouseId, quantity, unitPrice } = req.body;
 

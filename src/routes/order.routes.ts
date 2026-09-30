@@ -9,7 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 router.use(authMiddleware);
 
 // GET /api/orders?search=...
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { status, clientId } = req.query;
@@ -91,7 +91,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/orders/:id
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
 
