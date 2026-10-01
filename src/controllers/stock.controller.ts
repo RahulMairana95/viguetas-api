@@ -9,7 +9,7 @@ export async function listStock(req: Request, res: Response): Promise<void> {
     const { warehouseId, productId, productType } = req.query;
 
     if (productType && !productTypeEnum.enumValues.includes(productType as 'vigueta' | 'plastoformo')) {
-      res.status(400).json({ error: `productType debe ser uno de: ${productTypeEnum.enumValues.join(', ')}` });
+      res.status(400).json({ message: `productType debe ser uno de: ${productTypeEnum.enumValues.join(', ')}` });
       return;
     }
 
@@ -117,12 +117,12 @@ export async function upsertStock(req: Request, res: Response): Promise<void> {
     const { warehouseId, productId, quantity } = req.body;
 
     if (!warehouseId || !productId || quantity === undefined) {
-      res.status(400).json({ error: 'warehouseId, productId y quantity son requeridos' });
+      res.status(400).json({ message: 'warehouseId, productId y quantity son requeridos' });
       return;
     }
 
     if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity < 0) {
-      res.status(400).json({ error: 'La cantidad debe ser un número entero no negativo' });
+      res.status(400).json({ message: 'La cantidad debe ser un número entero no negativo' });
       return;
     }
 
