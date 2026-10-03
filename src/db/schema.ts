@@ -73,14 +73,19 @@ export const clients = pgTable('clients', {
 export const sales = pgTable('sales', {
   id: uuid('id').defaultRandom().primaryKey(),
   clientId: uuid('client_id').references(() => clients.id).notNull(),
-  productId: uuid('product_id').references(() => products.id).notNull(),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
-  quantity: integer('quantity').notNull(),
-  unitPrice: decimal('unit_price', { precision: 10, scale: 2 }),
-  date: timestamp('date').defaultNow(),
   userId: uuid('user_id').references(() => users.id).notNull(),
+  date: timestamp('date').defaultNow(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const saleItems = pgTable('sale_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  saleId: uuid('sale_id').references(() => sales.id).notNull(),
+  productId: uuid('product_id').references(() => products.id).notNull(),
+  quantity: integer('quantity').notNull(),
+  unitPrice: decimal('unit_price', { precision: 10, scale: 2 }),
 });
 
 export const orders = pgTable('orders', {

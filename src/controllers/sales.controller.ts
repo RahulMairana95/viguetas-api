@@ -1,20 +1,17 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { stock, sales, clients, products, warehouses, users } from '../db/schema';
-import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
+import { stock, sales, saleItems, clients, products, warehouses, users } from '../db/schema';
+import { eq, and, count, desc, inArray } from 'drizzle-orm';
+
+type ItemVenta = { productId: string; quantity: number; unitPrice?: number | null };
 
 export async function listSales(req: Request, res: Response): Promise<void> {
   try {
-    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { warehouseId, clientId } = req.query;
 
     const condiciones = [];
     if (warehouseId) condiciones.push(eq(sales.warehouseId, warehouseId as string));
     if (clientId) condiciones.push(eq(sales.clientId, clientId as string));
-    if (search) condiciones.push(or(
-      ilike(clients.name, `%${search}%`),
-      ilike(products.name, `%${search}%`)
-    ));
 
     const whereClause = condiciones.length > 0 ? and(...condiciones) : undefined;
 
@@ -22,30 +19,17 @@ export async function listSales(req: Request, res: Response): Promise<void> {
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const [{ total }] = await db.select({ total: count() })
-      .from(sales)
-      .innerJoin(clients, eq(sales.clientId, clients.id))
-      .innerJoin(products, eq(sales.productId, products.id))
-      .where(whereClause);
+    const [{ total }] = await db.select({ total: count() }).from(sales).where(whereClause);
 
-    const resultado = await db.select({
+    const ventas = await db.select({
       id: sales.id,
       clientId: sales.clientId,
-      productId: sales.productId,
       warehouseId: sales.warehouseId,
-      quantity: sales.quantity,
-      unitPrice: sales.unitPrice,
-      date: sales.date,
       userId: sales.userId,
+      date: sales.date,
       client: {
         id: clients.id,
         name: clients.name,
-      },
-      product: {
-        id: products.id,
-        name: products.name,
-        productType: products.productType,
-        measurement: products.measurement,
       },
       warehouse: {
         id: warehouses.id,
@@ -58,13 +42,44 @@ export async function listSales(req: Request, res: Response): Promise<void> {
     })
       .from(sales)
       .innerJoin(clients, eq(sales.clientId, clients.id))
-      .innerJoin(products, eq(sales.productId, products.id))
       .innerJoin(warehouses, eq(sales.warehouseId, warehouses.id))
       .innerJoin(users, eq(sales.userId, users.id))
       .where(whereClause)
-      .orderBy(desc(sales.updatedAt))
+      .orderBy(desc(sales.date))
       .limit(limit)
       .offset(offset);
+
+    let resultado: any[] = [];
+
+    if (ventas.length > 0) {
+      const items = await db.select({
+        saleId: saleItems.saleId,
+        productId: saleItems.productId,
+        quantity: saleItems.quantity,
+        unitPrice: saleItems.unitPrice,
+        product: {
+          id: products.id,
+          name: products.name,
+          productType: products.productType,
+          measurement: products.measurement,
+        },
+      })
+        .from(saleItems)
+        .innerJoin(products, eq(saleItems.productId, products.id))
+        .where(inArray(saleItems.saleId, ventas.map((v) => v.id)));
+
+      resultado = ventas.map((venta) => {
+        const lineas = items.filter((i) => i.saleId === venta.id);
+        return {
+          ...venta,
+          items: lineas,
+          total: lineas.reduce(
+            (acc, i) => acc + (Number(i.unitPrice) || 0) * i.quantity,
+            0
+          ),
+        };
+      });
+    }
 
     res.json({
       data: resultado,
@@ -82,50 +97,80 @@ export async function listSales(req: Request, res: Response): Promise<void> {
 
 export async function createSale(req: Request, res: Response): Promise<void> {
   try {
-    const { clientId, productId, warehouseId, quantity, unitPrice } = req.body;
+    const { clientId, warehouseId, items } = req.body as {
+      clientId: string;
+      warehouseId: string;
+      items: ItemVenta[];
+    };
 
-    if (!clientId || !productId || !warehouseId || quantity === undefined || quantity === null) {
-      res.status(400).json({ message: 'clientId, productId, warehouseId y quantity son requeridos' });
+    if (!clientId || !warehouseId || !Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ message: 'clientId, warehouseId y al menos un producto son requeridos' });
       return;
     }
 
-    if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity <= 0) {
-      res.status(400).json({ message: 'La cantidad debe ser un número entero mayor a cero' });
-      return;
+    for (const item of items) {
+      if (!item.productId || typeof item.quantity !== 'number' ||
+          !Number.isInteger(item.quantity) || item.quantity <= 0) {
+        res.status(400).json({ message: 'Cada producto debe tener productId y cantidad entera mayor a cero' });
+        return;
+      }
+      if (item.unitPrice !== undefined && item.unitPrice !== null &&
+          (typeof item.unitPrice !== 'number' || item.unitPrice < 0)) {
+        res.status(400).json({ message: 'unitPrice debe ser un número mayor o igual a cero' });
+        return;
+      }
     }
 
-    const result = await db.transaction(async (tx) => {
-      // Bloquea la fila de stock para evitar condiciones de carrera con
-      // ventas o traslados simultáneos sobre el mismo producto/almacén.
-      const [stockActual] = await tx.select().from(stock)
-        .where(and(eq(stock.warehouseId, warehouseId), eq(stock.productId, productId)))
-        .for('update');
+    // Acumula cantidades por producto para descontar stock (si un producto
+    // aparece en varias líneas, se descuenta la suma una sola vez).
+    const cantidades = new Map<string, number>();
+    for (const item of items) {
+      cantidades.set(item.productId, (cantidades.get(item.productId) ?? 0) + item.quantity);
+    }
 
-      if (!stockActual || stockActual.quantity < quantity) {
-        throw new Error('Stock insuficiente en el almacén seleccionado');
+    const resultado = await db.transaction(async (tx) => {
+      // 1. Bloquear y verificar el stock de TODOS los productos antes de
+      //    descontar cualquiera (FOR UPDATE evita condiciones de carrera).
+      const stocks = new Map<string, typeof stock.$inferSelect>();
+      for (const [productId, cantidad] of cantidades) {
+        const [stockActual] = await tx.select().from(stock)
+          .where(and(eq(stock.warehouseId, warehouseId), eq(stock.productId, productId)))
+          .for('update');
+
+        if (!stockActual || stockActual.quantity < cantidad) {
+          throw new Error('Stock insuficiente para uno de los productos seleccionados');
+        }
+        stocks.set(productId, stockActual);
       }
 
-      await tx.update(stock)
-        .set({ quantity: stockActual.quantity - quantity, updatedAt: new Date() })
-        .where(and(eq(stock.warehouseId, warehouseId), eq(stock.productId, productId)));
+      // 2. Descontar stock de cada producto
+      for (const [productId, cantidad] of cantidades) {
+        const stockActual = stocks.get(productId)!;
+        await tx.update(stock)
+          .set({ quantity: stockActual.quantity - cantidad, updatedAt: new Date() })
+          .where(and(eq(stock.warehouseId, warehouseId), eq(stock.productId, productId)));
+      }
 
+      // 3. Crear la venta (recibo) y sus líneas
       const [nuevaVenta] = await tx.insert(sales)
-        .values({
-          clientId,
-          productId,
-          warehouseId,
-          quantity,
-          unitPrice: unitPrice ?? null,
-          userId: req.user!.userId,
-        })
+        .values({ clientId, warehouseId, userId: req.user!.userId })
         .returning();
 
-      return nuevaVenta;
+      const lineas = items.map((item) => ({
+        saleId: nuevaVenta.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice != null ? item.unitPrice.toString() : null,
+      }));
+
+      await tx.insert(saleItems).values(lineas);
+
+      return { ...nuevaVenta, items: lineas };
     });
 
-    res.status(201).json(result);
+    res.status(201).json(resultado);
   } catch (error: any) {
-    if (error?.message === 'Stock insuficiente en el almacén seleccionado') {
+    if (error?.message === 'Stock insuficiente para uno de los productos seleccionados') {
       res.status(400).json({ message: error.message });
       return;
     }
