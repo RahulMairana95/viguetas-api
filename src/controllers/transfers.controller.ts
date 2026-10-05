@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { stock, transfers, warehouses, products, users } from '../db/schema';
-import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
+import { stock, transfers, transferItems, warehouses, products, users } from '../db/schema';
+import { eq, and, count, ilike, or, desc, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 const warehousesDest = alias(warehouses, 'warehouses_dest');
@@ -14,12 +14,23 @@ export async function listTransfers(req: Request, res: Response): Promise<void> 
     const condiciones = [];
     if (originId) condiciones.push(eq(transfers.originId, originId as string));
     if (destinationId) condiciones.push(eq(transfers.destinationId, destinationId as string));
-    if (productId) condiciones.push(eq(transfers.productId, productId as string));
     if (warehouseId) condiciones.push(or(
       eq(transfers.originId, warehouseId as string),
       eq(transfers.destinationId, warehouseId as string)
     ));
-    if (search) condiciones.push(ilike(products.name, `%${search}%`));
+    if (productId) {
+      const sub = db.select({ transferId: transferItems.transferId })
+        .from(transferItems)
+        .where(eq(transferItems.productId, productId as string));
+      condiciones.push(inArray(transfers.id, sub));
+    }
+    if (search) {
+      const sub = db.select({ transferId: transferItems.transferId })
+        .from(transferItems)
+        .innerJoin(products, eq(transferItems.productId, products.id))
+        .where(ilike(products.name, `%${search}%`));
+      condiciones.push(inArray(transfers.id, sub));
+    }
 
     const whereClause = condiciones.length > 0 ? and(...condiciones) : undefined;
 
@@ -27,25 +38,15 @@ export async function listTransfers(req: Request, res: Response): Promise<void> 
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const [{ total }] = await db.select({ total: count() })
-      .from(transfers)
-      .innerJoin(products, eq(transfers.productId, products.id))
-      .where(whereClause);
+    const [{ total }] = await db.select({ total: count() }).from(transfers).where(whereClause);
 
     const resultado = await db.select({
       id: transfers.id,
-      productId: transfers.productId,
       originId: transfers.originId,
       destinationId: transfers.destinationId,
-      quantity: transfers.quantity,
       userId: transfers.userId,
       createdAt: transfers.createdAt,
-      product: {
-        id: products.id,
-        name: products.name,
-        productType: products.productType,
-        measurement: products.measurement,
-      },
+      updatedAt: transfers.updatedAt,
       origin: {
         id: warehouses.id,
         name: warehouses.name,
@@ -60,17 +61,40 @@ export async function listTransfers(req: Request, res: Response): Promise<void> 
       },
     })
       .from(transfers)
-      .innerJoin(products, eq(transfers.productId, products.id))
       .innerJoin(warehouses, eq(transfers.originId, warehouses.id))
       .innerJoin(warehousesDest, eq(transfers.destinationId, warehousesDest.id))
       .innerJoin(users, eq(transfers.userId, users.id))
       .where(whereClause)
-      .orderBy(desc(transfers.updatedAt))
+      .orderBy(desc(transfers.createdAt))
       .limit(limit)
       .offset(offset);
 
+    let data: any[] = [];
+
+    if (resultado.length > 0) {
+      const items = await db.select({
+        transferId: transferItems.transferId,
+        productId: transferItems.productId,
+        quantity: transferItems.quantity,
+        product: {
+          id: products.id,
+          name: products.name,
+          productType: products.productType,
+          measurement: products.measurement,
+        },
+      })
+        .from(transferItems)
+        .innerJoin(products, eq(transferItems.productId, products.id))
+        .where(inArray(transferItems.transferId, resultado.map((t) => t.id)));
+
+      data = resultado.map((traslado) => ({
+        ...traslado,
+        items: items.filter((i) => i.transferId === traslado.id),
+      }));
+    }
+
     res.json({
-      data: resultado,
+      data,
       pagination: {
         page,
         limit,
@@ -83,12 +107,33 @@ export async function listTransfers(req: Request, res: Response): Promise<void> 
   }
 }
 
+type ItemTraslado = { productId: string; quantity: number };
+
 export async function createTransfer(req: Request, res: Response): Promise<void> {
   try {
-    const { productId, originId, destinationId, quantity } = req.body;
+    const { destinationId, items } = req.body as {
+      destinationId: string;
+      items: ItemTraslado[];
+    };
+    let { originId } = req.body as { originId?: string };
 
-    if (!productId || !originId || !destinationId || quantity === undefined || quantity === null) {
-      res.status(400).json({ message: 'Todos los campos son requeridos' });
+    // Rol store: el origen SIEMPRE sale del usuario autenticado, nunca del
+    // body (si un store mandara otro originId con Postman, se ignora).
+    // El destino queda libre para ambos roles.
+    if (req.user!.role === 'store') {
+      const [usuario] = await db.select({ warehouseId: users.warehouseId })
+        .from(users)
+        .where(eq(users.id, req.user!.userId));
+
+      if (!usuario?.warehouseId) {
+        res.status(400).json({ message: 'Tu usuario no tiene un almacén asignado. Contacta al administrador.' });
+        return;
+      }
+      originId = usuario.warehouseId;
+    }
+
+    if (!originId || !destinationId || !Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ message: 'Origen, destino y al menos un producto son requeridos' });
       return;
     }
 
@@ -97,47 +142,74 @@ export async function createTransfer(req: Request, res: Response): Promise<void>
       return;
     }
 
-    if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity <= 0) {
-      res.status(400).json({ message: 'La cantidad debe ser un número entero mayor a cero' });
-      return;
+    for (const item of items) {
+      if (!item.productId || typeof item.quantity !== 'number' ||
+          !Number.isInteger(item.quantity) || item.quantity <= 0) {
+        res.status(400).json({ message: 'Cada producto debe tener productId y cantidad entera mayor a cero' });
+        return;
+      }
     }
 
-    const result = await db.transaction(async (tx) => {
-      // Bloquea la fila de stock del origen para evitar condiciones de carrera
-      // entre traslados simultáneos (evita stock negativo).
-      const [stockOrigen] = await tx.select().from(stock)
-        .where(and(eq(stock.warehouseId, originId), eq(stock.productId, productId)))
-        .for('update');
+    // Acumula cantidades por producto (si un producto aparece en varias
+    // líneas, se mueve la suma una sola vez).
+    const cantidades = new Map<string, number>();
+    for (const item of items) {
+      cantidades.set(item.productId, (cantidades.get(item.productId) ?? 0) + item.quantity);
+    }
 
-      if (!stockOrigen || stockOrigen.quantity < quantity) {
-        throw new Error('Stock insuficiente en el almacén de origen');
+    const resultado = await db.transaction(async (tx) => {
+      // 1. Bloquear y verificar el stock de TODOS los productos en el origen
+      //    antes de mover cualquiera (FOR UPDATE evita condiciones de carrera).
+      const stocks = new Map<string, typeof stock.$inferSelect>();
+      for (const [productId, cantidad] of cantidades) {
+        const [stockOrigen] = await tx.select().from(stock)
+          .where(and(eq(stock.warehouseId, originId), eq(stock.productId, productId)))
+          .for('update');
+
+        if (!stockOrigen || stockOrigen.quantity < cantidad) {
+          throw new Error('Stock insuficiente para uno de los productos seleccionados');
+        }
+        stocks.set(productId, stockOrigen);
       }
 
-      await tx.update(stock)
-        .set({ quantity: stockOrigen.quantity - quantity, updatedAt: new Date() })
-        .where(and(eq(stock.warehouseId, originId), eq(stock.productId, productId)));
-
-      const [stockDestino] = await tx.select().from(stock)
-        .where(and(eq(stock.warehouseId, destinationId), eq(stock.productId, productId)));
-
-      if (stockDestino) {
+      // 2. Restar del origen y sumar al destino, producto por producto
+      for (const [productId, cantidad] of cantidades) {
+        const stockOrigen = stocks.get(productId)!;
         await tx.update(stock)
-          .set({ quantity: stockDestino.quantity + quantity, updatedAt: new Date() })
+          .set({ quantity: stockOrigen.quantity - cantidad, updatedAt: new Date() })
+          .where(and(eq(stock.warehouseId, originId), eq(stock.productId, productId)));
+
+        const [stockDestino] = await tx.select().from(stock)
           .where(and(eq(stock.warehouseId, destinationId), eq(stock.productId, productId)));
-      } else {
-        await tx.insert(stock).values({ warehouseId: destinationId, productId, quantity });
+
+        if (stockDestino) {
+          await tx.update(stock)
+            .set({ quantity: stockDestino.quantity + cantidad, updatedAt: new Date() })
+            .where(and(eq(stock.warehouseId, destinationId), eq(stock.productId, productId)));
+        } else {
+          await tx.insert(stock).values({ warehouseId: destinationId, productId, quantity: cantidad });
+        }
       }
 
+      // 3. Crear el traslado y sus líneas
       const [nuevoTraslado] = await tx.insert(transfers)
-        .values({ productId, originId, destinationId, quantity, userId: req.user!.userId })
+        .values({ originId, destinationId, userId: req.user!.userId })
         .returning();
 
-      return nuevoTraslado;
+      const lineas = items.map((item) => ({
+        transferId: nuevoTraslado.id,
+        productId: item.productId,
+        quantity: item.quantity,
+      }));
+
+      await tx.insert(transferItems).values(lineas);
+
+      return { ...nuevoTraslado, items: lineas };
     });
 
-    res.status(201).json(result);
+    res.status(201).json(resultado);
   } catch (error: any) {
-    if (error?.message === 'Stock insuficiente en el almacén de origen') {
+    if (error?.message === 'Stock insuficiente para uno de los productos seleccionados') {
       res.status(400).json({ message: error.message });
       return;
     }

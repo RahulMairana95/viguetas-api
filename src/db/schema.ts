@@ -53,13 +53,18 @@ export const stock = pgTable('stock', {
 
 export const transfers = pgTable('transfers', {
   id: uuid('id').defaultRandom().primaryKey(),
-  productId: uuid('product_id').references(() => products.id).notNull(),
   originId: uuid('origin_id').references(() => warehouses.id).notNull(),
   destinationId: uuid('destination_id').references(() => warehouses.id).notNull(),
-  quantity: integer('quantity').notNull(),
   userId: uuid('user_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const transferItems = pgTable('transfer_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  transferId: uuid('transfer_id').references(() => transfers.id).notNull(),
+  productId: uuid('product_id').references(() => products.id).notNull(),
+  quantity: integer('quantity').notNull(),
 });
 
 export const clients = pgTable('clients', {
