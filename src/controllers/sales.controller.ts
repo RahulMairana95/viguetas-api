@@ -97,11 +97,25 @@ export async function listSales(req: Request, res: Response): Promise<void> {
 
 export async function createSale(req: Request, res: Response): Promise<void> {
   try {
-    const { clientId, warehouseId, items } = req.body as {
+    const { clientId, items } = req.body as {
       clientId: string;
-      warehouseId: string;
       items: ItemVenta[];
     };
+    let { warehouseId } = req.body as { warehouseId?: string };
+
+    // Rol store: el almacén SIEMPRE sale del usuario autenticado, nunca del
+    // body (si un store mandara otro warehouseId con Postman, se ignora).
+    if (req.user!.role === 'store') {
+      const [usuario] = await db.select({ warehouseId: users.warehouseId })
+        .from(users)
+        .where(eq(users.id, req.user!.userId));
+
+      if (!usuario?.warehouseId) {
+        res.status(400).json({ message: 'Tu usuario no tiene un almacén asignado. Contacta al administrador.' });
+        return;
+      }
+      warehouseId = usuario.warehouseId;
+    }
 
     if (!clientId || !warehouseId || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({ message: 'clientId, warehouseId y al menos un producto son requeridos' });
