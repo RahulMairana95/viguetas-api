@@ -117,18 +117,14 @@ export async function createTransfer(req: Request, res: Response): Promise<void>
     };
     let { originId } = req.body as { originId?: string };
 
-    // Rol store: el origen SIEMPRE sale del usuario autenticado, nunca del
-    // body (si un store mandara otro originId con Postman, se ignora).
-    // El destino queda libre para ambos roles.
-    if (req.user!.role === 'store') {
-      const [usuario] = await db.select({ warehouseId: users.warehouseId })
-        .from(users)
-        .where(eq(users.id, req.user!.userId));
+    // Si el usuario tiene almacén asignado (cualquier rol), se fuerza ese
+    // almacén como origen y se ignora lo que mande el body. Solo quien no
+    // tiene almacén asignado elige libremente. El destino queda libre.
+    const [usuario] = await db.select({ warehouseId: users.warehouseId })
+      .from(users)
+      .where(eq(users.id, req.user!.userId));
 
-      if (!usuario?.warehouseId) {
-        res.status(400).json({ message: 'Tu usuario no tiene un almacén asignado. Contacta al administrador.' });
-        return;
-      }
+    if (usuario?.warehouseId) {
       originId = usuario.warehouseId;
     }
 

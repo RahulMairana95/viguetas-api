@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { stock, sales, saleItems, clients, products, warehouses, users } from '../db/schema';
+import { stock, sales, saleItems, clients, products, warehouses, users, orders } from '../db/schema';
 import { eq, and, count, desc, inArray } from 'drizzle-orm';
 
 type ItemVenta = { productId: string; quantity: number; unitPrice?: number | null };
@@ -25,6 +25,7 @@ export async function listSales(req: Request, res: Response): Promise<void> {
       id: sales.id,
       clientId: sales.clientId,
       warehouseId: sales.warehouseId,
+      orderId: sales.orderId,
       userId: sales.userId,
       date: sales.date,
       client: {
@@ -97,23 +98,21 @@ export async function listSales(req: Request, res: Response): Promise<void> {
 
 export async function createSale(req: Request, res: Response): Promise<void> {
   try {
-    const { clientId, items } = req.body as {
+    const { clientId, items, orderId } = req.body as {
       clientId: string;
       items: ItemVenta[];
+      orderId?: string;
     };
     let { warehouseId } = req.body as { warehouseId?: string };
 
-    // Rol store: el almacén SIEMPRE sale del usuario autenticado, nunca del
-    // body (si un store mandara otro warehouseId con Postman, se ignora).
-    if (req.user!.role === 'store') {
-      const [usuario] = await db.select({ warehouseId: users.warehouseId })
-        .from(users)
-        .where(eq(users.id, req.user!.userId));
+    // Si el usuario tiene almacén asignado (cualquier rol), se fuerza ese
+    // almacén y se ignora lo que mande el body (nunca se confía en el dato
+    // sensible). Solo quien no tiene almacén asignado elige libremente.
+    const [usuario] = await db.select({ warehouseId: users.warehouseId })
+      .from(users)
+      .where(eq(users.id, req.user!.userId));
 
-      if (!usuario?.warehouseId) {
-        res.status(400).json({ message: 'Tu usuario no tiene un almacén asignado. Contacta al administrador.' });
-        return;
-      }
+    if (usuario?.warehouseId) {
       warehouseId = usuario.warehouseId;
     }
 
@@ -131,6 +130,14 @@ export async function createSale(req: Request, res: Response): Promise<void> {
       if (item.unitPrice !== undefined && item.unitPrice !== null &&
           (typeof item.unitPrice !== 'number' || item.unitPrice < 0)) {
         res.status(400).json({ message: 'unitPrice debe ser un número mayor o igual a cero' });
+        return;
+      }
+    }
+
+    if (orderId) {
+      const [pedido] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, orderId));
+      if (!pedido) {
+        res.status(400).json({ message: 'El pedido indicado no existe' });
         return;
       }
     }
@@ -167,7 +174,7 @@ export async function createSale(req: Request, res: Response): Promise<void> {
 
       // 3. Crear la venta (recibo) y sus líneas
       const [nuevaVenta] = await tx.insert(sales)
-        .values({ clientId, warehouseId, userId: req.user!.userId })
+        .values({ clientId, warehouseId, orderId: orderId ?? null, userId: req.user!.userId })
         .returning();
 
       const lineas = items.map((item) => ({

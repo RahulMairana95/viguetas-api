@@ -79,6 +79,7 @@ export const sales = pgTable('sales', {
   id: uuid('id').defaultRandom().primaryKey(),
   clientId: uuid('client_id').references(() => clients.id).notNull(),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
+  orderId: uuid('order_id').references(() => orders.id),
   userId: uuid('user_id').references(() => users.id).notNull(),
   date: timestamp('date').defaultNow(),
   createdAt: timestamp('created_at').defaultNow().notNull(),

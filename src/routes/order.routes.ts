@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
-import { orders, orderItems, clients, products, users, productions } from '../db/schema';
+import { orders, orderItems, clients, products, users, productions, sales, warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
@@ -186,6 +186,28 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
     res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ message: 'Error creating order' });
+  }
+});
+
+// GET /api/orders/:id/sales — ventas vinculadas al pedido
+router.get('/:id/sales', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+
+    const resultado = await db.select({
+      id: sales.id,
+      clientId: sales.clientId,
+      warehouseId: sales.warehouseId,
+      date: sales.date,
+      warehouseName: warehouses.name,
+    })
+      .from(sales)
+      .innerJoin(warehouses, eq(sales.warehouseId, warehouses.id))
+      .where(eq(sales.orderId, id));
+
+    res.json({ data: resultado });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching sales for order' });
   }
 });
 
