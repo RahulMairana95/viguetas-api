@@ -144,7 +144,19 @@ router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
     const orderProductions = await db.select().from(productions)
       .where(eq(productions.orderId, id));
 
-    res.json({ ...order, items, productions: orderProductions });
+    // Get sales linked to this order
+    const ventasVinculadas = await db.select({
+      id: sales.id,
+      clientId: sales.clientId,
+      warehouseId: sales.warehouseId,
+      date: sales.date,
+      warehouseName: warehouses.name,
+    })
+      .from(sales)
+      .innerJoin(warehouses, eq(sales.warehouseId, warehouses.id))
+      .where(eq(sales.orderId, id));
+
+    res.json({ ...order, items, productions: orderProductions, sales: ventasVinculadas });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching order' });
   }
@@ -158,6 +170,14 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
     if (!clientId || !deliveryPlace || !deliveryDate || !items?.length) {
       res.status(400).json({ message: 'clientId, deliveryPlace, deliveryDate and items are required' });
       return;
+    }
+
+    for (const item of items) {
+      if (!item.productId || typeof item.quantity !== 'number' ||
+          !Number.isInteger(item.quantity) || item.quantity <= 0) {
+        res.status(400).json({ message: 'Cada línea debe tener productId y cantidad entera mayor a cero' });
+        return;
+      }
     }
 
     const result = await db.transaction(async (tx) => {

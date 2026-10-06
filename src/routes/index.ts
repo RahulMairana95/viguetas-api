@@ -9,6 +9,7 @@ import clientRoutes from './client.routes';
 import saleRoutes from './sale.routes';
 import orderRoutes from './order.routes';
 import productionRoutes from './production.routes';
+import planningRoutes from './planning.routes';
 import stockRequestRoutes from './stockRequest.routes';
 
 const router: ReturnType<typeof Router> = Router();
@@ -23,6 +24,7 @@ router.use('/clients', clientRoutes);
 router.use('/sales', saleRoutes);
 router.use('/orders', orderRoutes);
 router.use('/productions', productionRoutes);
+router.use('/planning', planningRoutes);
 router.use('/stock-requests', stockRequestRoutes);
 
 export default router;

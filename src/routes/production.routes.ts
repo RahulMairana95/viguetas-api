@@ -9,7 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 router.use(authMiddleware);
 
 // GET /api/productions?search=...
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { status, orderId } = req.query;
@@ -86,9 +86,18 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
   try {
     const { productId, quantity, orderId, notes } = req.body;
 
-    if (!productId || !quantity) {
-      res.status(400).json({ message: 'productId and quantity are required' });
+    if (!productId || typeof quantity !== 'number' ||
+        !Number.isInteger(quantity) || quantity <= 0) {
+      res.status(400).json({ message: 'productId y quantity (entera mayor a cero) son requeridos' });
       return;
+    }
+
+    if (orderId) {
+      const [pedido] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, orderId));
+      if (!pedido) {
+        res.status(400).json({ message: 'El pedido indicado no existe' });
+        return;
+      }
     }
 
     const [production] = await db.insert(productions)
@@ -112,57 +121,69 @@ router.patch('/:id/complete', roleMiddleware('admin'), async (req: Request, res:
   try {
     const id = req.params.id as string;
 
-    const [production] = await db.select().from(productions)
-      .where(eq(productions.id, id));
-
-    if (!production) {
-      res.status(404).json({ message: 'Production not found' });
-      return;
-    }
-
-    if (production.status === 'completed') {
-      res.status(400).json({ message: 'Production already completed' });
-      return;
-    }
-
     const result = await db.transaction(async (tx) => {
-      // Update production status
+      // Bloquea el registro (FOR UPDATE) para que dos completados
+      // simultáneos no sumen el stock dos veces.
+      const [production] = await tx.select().from(productions)
+        .where(eq(productions.id, id))
+        .for('update');
+
+      if (!production) {
+        throw new Error('NOT_FOUND');
+      }
+
+      if (production.status === 'completed') {
+        throw new Error('ALREADY_COMPLETED');
+      }
+
+      // Suma la producción al stock del almacén de tipo fábrica
+      const [factory] = await tx.select().from(warehouses)
+        .where(eq(warehouses.type, 'factory'));
+
+      if (!factory) {
+        throw new Error('NO_FACTORY');
+      }
+
+      const [existingStock] = await tx.select().from(stock)
+        .where(and(eq(stock.warehouseId, factory.id), eq(stock.productId, production.productId)));
+
+      if (existingStock) {
+        await tx.update(stock)
+          .set({ quantity: existingStock.quantity + production.quantity, updatedAt: new Date() })
+          .where(and(eq(stock.warehouseId, factory.id), eq(stock.productId, production.productId)));
+      } else {
+        await tx.insert(stock)
+          .values({
+            warehouseId: factory.id,
+            productId: production.productId,
+            quantity: production.quantity,
+          });
+      }
+
       const [updated] = await tx.update(productions)
         .set({ status: 'completed', updatedAt: new Date() })
         .where(eq(productions.id, id))
         .returning();
 
-      // Find factory warehouse
-      const [factory] = await tx.select().from(warehouses)
-        .where(eq(warehouses.type, 'factory'));
-
-      if (factory) {
-        // Check if stock exists in factory
-        const [existingStock] = await tx.select().from(stock)
-          .where(and(eq(stock.warehouseId, factory.id), eq(stock.productId, production.productId)));
-
-        if (existingStock) {
-          // Update stock
-          await tx.update(stock)
-            .set({ quantity: existingStock.quantity + production.quantity })
-            .where(and(eq(stock.warehouseId, factory.id), eq(stock.productId, production.productId)));
-        } else {
-          // Create new stock
-          await tx.insert(stock)
-            .values({
-              warehouseId: factory.id,
-              productId: production.productId,
-              quantity: production.quantity,
-            });
-        }
-      }
-
       return updated;
     });
 
     res.json(result);
-  } catch (error) {
-    res.status(500).json({ message: 'Error completing production' });
+  } catch (error: any) {
+    if (error?.message === 'NOT_FOUND') {
+      res.status(404).json({ message: 'Registro de producción no encontrado' });
+      return;
+    }
+    if (error?.message === 'ALREADY_COMPLETED') {
+      res.status(400).json({ message: 'Este registro ya fue marcado como completado' });
+      return;
+    }
+    if (error?.message === 'NO_FACTORY') {
+      res.status(400).json({ message: 'No existe un almacén de tipo fábrica configurado' });
+      return;
+    }
+    console.error('Error completing production:', error);
+    res.status(500).json({ message: 'No se pudo completar el registro de producción' });
   }
 });
 
