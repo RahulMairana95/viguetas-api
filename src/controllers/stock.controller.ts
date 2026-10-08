@@ -42,6 +42,8 @@ export async function listStock(req: Request, res: Response): Promise<void> {
         id: warehouses.id,
         name: warehouses.name,
         type: warehouses.type,
+        phone: warehouses.phone,
+        address: warehouses.address,
       },
       product: {
         id: products.id,
@@ -85,6 +87,8 @@ export async function getStockItem(req: Request, res: Response): Promise<void> {
         id: warehouses.id,
         name: warehouses.name,
         type: warehouses.type,
+        phone: warehouses.phone,
+        address: warehouses.address,
       },
       product: {
         id: products.id,

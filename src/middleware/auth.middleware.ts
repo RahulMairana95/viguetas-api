@@ -46,7 +46,7 @@ export const roleMiddleware = (...roles: string[]) => {
       return;
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (req.user.role !== 'superadmin' && !roles.includes(req.user.role)) {
       res.status(403).json({ message: 'Insufficient permissions' });
       return;
     }

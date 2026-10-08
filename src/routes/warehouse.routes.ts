@@ -9,7 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 router.use(authMiddleware);
 
 // GET /api/warehouses?search=...
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -38,7 +38,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/warehouses/:id
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [warehouse] = await db.select().from(warehouses).where(eq(warehouses.id, id));
@@ -55,9 +55,10 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/warehouses
-router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', roleMiddleware('superadmin'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, type, address, phone } = req.body;
+    const { name, type, address } = req.body;
+    const telefono = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
 
     if (!name || !type) {
       res.status(400).json({ message: 'Name and type are required' });
@@ -69,7 +70,12 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
       return;
     }
 
-    const [warehouse] = await db.insert(warehouses).values({ name, type, address, phone }).returning();
+    if (telefono && !/^[0-9+\s()-]{6,20}$/.test(telefono)) {
+      res.status(400).json({ error: 'El teléfono solo puede contener números, espacios, +, - y paréntesis' });
+      return;
+    }
+
+    const [warehouse] = await db.insert(warehouses).values({ name, type, address, phone: telefono || null }).returning();
 
     res.status(201).json(warehouse);
   } catch (error) {
@@ -78,13 +84,19 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 });
 
 // PUT /api/warehouses/:id
-router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', roleMiddleware('superadmin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { name, type, address, phone } = req.body;
+    const { name, type, address } = req.body;
+    const telefono = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+
+    if (telefono && !/^[0-9+\s()-]{6,20}$/.test(telefono)) {
+      res.status(400).json({ error: 'El teléfono solo puede contener números, espacios, +, - y paréntesis' });
+      return;
+    }
 
     const [warehouse] = await db.update(warehouses)
-      .set({ name, type, address, phone, updatedAt: new Date() })
+      .set({ name, type, address, phone: telefono || null, updatedAt: new Date() })
       .where(eq(warehouses.id, id))
       .returning();
 
@@ -95,7 +107,7 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 });
 
 // DELETE /api/warehouses/:id
-router.delete('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', roleMiddleware('superadmin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     await db.delete(warehouses).where(eq(warehouses.id, id));
