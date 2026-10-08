@@ -217,6 +217,40 @@ router.patch('/profile', authMiddleware, async (req: Request, res: Response): Pr
   }
 });
 
+// PATCH /api/auth/change-password
+router.patch('/change-password', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ message: 'Contraseña actual y nueva son requeridas', status: 'error', data: null });
+      return;
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.id, req.user!.userId));
+    if (!user) {
+      res.status(404).json({ message: 'User not found', status: 'error', data: null });
+      return;
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!validPassword) {
+      res.status(401).json({ message: 'La contraseña actual es incorrecta', status: 'error', data: null });
+      return;
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    
+    await db.update(users)
+      .set({ password: hashedNewPassword, updatedAt: new Date() })
+      .where(eq(users.id, req.user!.userId));
+
+    res.json({ message: 'Contraseña actualizada correctamente', status: 'success', data: null });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating password', status: 'error', data: null });
+  }
+});
+
 // DELETE /api/auth/profile
 router.delete('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
