@@ -9,7 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 router.use(authMiddleware);
 
 // GET /api/clients?search=...
-router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -39,7 +39,7 @@ router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Resp
 });
 
 // GET /api/clients/:id
-router.get('/:id', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [client] = await db.select().from(clients).where(eq(clients.id, id));
@@ -88,7 +88,7 @@ router.get('/:id', roleMiddleware('admin', 'store'), async (req: Request, res: R
 });
 
 // POST /api/clients
-router.post('/', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, phone } = req.body;
 

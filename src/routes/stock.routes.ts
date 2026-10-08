@@ -6,8 +6,8 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-router.get('/', roleMiddleware('admin', 'store'), listStock);
-router.get('/:warehouseId/:productId', roleMiddleware('admin', 'store'), getStockItem);
+router.get('/', roleMiddleware('admin', 'promoter'), listStock);
+router.get('/:warehouseId/:productId', roleMiddleware('admin', 'promoter'), getStockItem);
 router.post('/', roleMiddleware('admin'), upsertStock);
 
 export default router;

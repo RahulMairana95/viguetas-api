@@ -6,7 +6,7 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-router.get('/', roleMiddleware('admin', 'store'), listSales);
-router.post('/', roleMiddleware('admin', 'store'), createSale);
+router.get('/', roleMiddleware('admin', 'promoter'), listSales);
+router.post('/', roleMiddleware('admin', 'promoter'), createSale);
 
 export default router;

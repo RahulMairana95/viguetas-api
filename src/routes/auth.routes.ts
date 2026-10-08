@@ -7,6 +7,7 @@ import { db } from '../db';
 import { users, refreshTokens } from '../db/schema';
 import { config } from '../config';
 import { authMiddleware, AuthPayload } from '../middleware/auth.middleware';
+import { validateWarehouseForRole } from '../utils/user-warehouse';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -17,6 +18,19 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 
     if (!email || !password || !name) {
       res.status(400).json({ message: 'Email, password and name are required', status: 'error', data: null });
+      return;
+    }
+
+    // Registro público solo crea usuarios promoter. admin y superadmin se
+    // crean desde /api/users (requiere ser admin autenticado).
+    if (role && role !== 'promoter') {
+      res.status(400).json({ message: 'El registro público solo permite el rol promoter', status: 'error', data: null });
+      return;
+    }
+
+    const warehouseError = await validateWarehouseForRole('promoter', warehouseId || null);
+    if (warehouseError) {
+      res.status(400).json({ message: warehouseError, status: 'error', data: null });
       return;
     }
 
@@ -33,7 +47,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       password: hashedPassword,
       name,
       lastName: lastName || null,
-      role: role || 'store',
+      role: 'promoter',
       warehouseId: warehouseId || null,
     }).returning({
       id: users.id,

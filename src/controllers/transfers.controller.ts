@@ -117,15 +117,21 @@ export async function createTransfer(req: Request, res: Response): Promise<void>
     };
     let { originId } = req.body as { originId?: string };
 
-    // Si el usuario tiene almacén asignado (cualquier rol), se fuerza ese
-    // almacén como origen y se ignora lo que mande el body. Solo quien no
-    // tiene almacén asignado elige libremente. El destino queda libre.
-    const [usuario] = await db.select({ warehouseId: users.warehouseId })
+    // El criterio es el ROL, no el id de almacén:
+    // - superadmin: elige libremente el origen del body (destino siempre libre)
+    // - admin/promoter: siempre su propio almacén como origen (ignora el body)
+    // - admin/promoter sin almacén: rechazado, nunca opera libre
+    const [usuario] = await db.select({ warehouseId: users.warehouseId, role: users.role })
       .from(users)
       .where(eq(users.id, req.user!.userId));
 
-    if (usuario?.warehouseId) {
+    if (usuario?.role === 'superadmin') {
+      // libre: conserva el originId del body
+    } else if (usuario?.warehouseId) {
       originId = usuario.warehouseId;
+    } else {
+      res.status(400).json({ message: 'Tu usuario no tiene un almacén asignado; pide al administrador que te asigne uno' });
+      return;
     }
 
     if (!originId || !destinationId || !Array.isArray(items) || items.length === 0) {

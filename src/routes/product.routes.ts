@@ -9,7 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 router.use(authMiddleware);
 
 // GET /api/products?search=...
-router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -36,7 +36,7 @@ router.get('/', roleMiddleware('admin', 'store'), async (req: Request, res: Resp
 });
 
 // GET /api/products/:id
-router.get('/:id', roleMiddleware('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [product] = await db.select().from(products).where(eq(products.id, id));

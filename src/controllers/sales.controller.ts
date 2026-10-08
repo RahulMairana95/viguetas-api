@@ -105,15 +105,21 @@ export async function createSale(req: Request, res: Response): Promise<void> {
     };
     let { warehouseId } = req.body as { warehouseId?: string };
 
-    // Si el usuario tiene almacén asignado (cualquier rol), se fuerza ese
-    // almacén y se ignora lo que mande el body (nunca se confía en el dato
-    // sensible). Solo quien no tiene almacén asignado elige libremente.
-    const [usuario] = await db.select({ warehouseId: users.warehouseId })
+    // El criterio es el ROL, no el id de almacén:
+    // - superadmin: elige libremente el almacén del body
+    // - admin/promoter: siempre su propio almacén (ignora el body)
+    // - admin/promoter sin almacén: rechazado, nunca opera libre
+    const [usuario] = await db.select({ warehouseId: users.warehouseId, role: users.role })
       .from(users)
       .where(eq(users.id, req.user!.userId));
 
-    if (usuario?.warehouseId) {
+    if (usuario?.role === 'superadmin') {
+      // libre: conserva el warehouseId del body
+    } else if (usuario?.warehouseId) {
       warehouseId = usuario.warehouseId;
+    } else {
+      res.status(400).json({ message: 'Tu usuario no tiene un almacén asignado; pide al administrador que te asigne uno' });
+      return;
     }
 
     if (!clientId || !warehouseId || !Array.isArray(items) || items.length === 0) {

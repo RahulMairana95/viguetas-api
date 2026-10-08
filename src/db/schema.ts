@@ -2,7 +2,7 @@ import {
   pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex, text,
 } from 'drizzle-orm/pg-core';
 
-export const roleEnum = pgEnum('role', ['admin', 'store']);
+export const roleEnum = pgEnum('role', ['admin', 'promoter', 'superadmin']);
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['factory', 'store']);
 export const orderStatusEnum = pgEnum('order_status', ['pending', 'completed', 'cancelled']);
 export const productionStatusEnum = pgEnum('production_status', ['pending', 'completed']);
@@ -24,7 +24,7 @@ export const users = pgTable('users', {
   password: varchar('password', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   lastName: varchar('last_name', { length: 255 }),
-  role: roleEnum('role').notNull().default('store'),
+  role: roleEnum('role').notNull().default('promoter'),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

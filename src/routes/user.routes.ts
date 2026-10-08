@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { users, refreshTokens } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { ROLES, validateWarehouseForRole } from '../utils/user-warehouse';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -78,14 +79,28 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
       return;
     }
 
-    if (role && !['admin', 'store'].includes(role)) {
-      res.status(400).json({ message: 'Role must be admin or store' });
+    if (role && !(ROLES as readonly string[]).includes(role)) {
+      res.status(400).json({ message: 'Role must be admin, store or superadmin' });
+      return;
+    }
+
+    // Solo un superadmin puede crear usuarios superadmin
+    if (role === 'superadmin' && req.user!.role !== 'superadmin') {
+      res.status(403).json({ message: 'Only a superadmin can create superadmin users' });
       return;
     }
 
     const [existingUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existingUser) {
       res.status(409).json({ message: 'Email already registered' });
+      return;
+    }
+
+    const finalRole = role || 'promoter';
+    const finalWarehouseId = warehouseId || null;
+    const warehouseError = await validateWarehouseForRole(finalRole, finalWarehouseId);
+    if (warehouseError) {
+      res.status(400).json({ message: warehouseError });
       return;
     }
 
@@ -96,8 +111,8 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
       password: hashedPassword,
       name,
       lastName: lastName || null,
-      role: role || 'store',
-      warehouseId: warehouseId || null,
+      role: finalRole,
+      warehouseId: finalWarehouseId,
     }).returning(userColumns);
 
     res.status(201).json(user);
@@ -112,8 +127,22 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
     const id = req.params.id as string;
     const { email, password, name, lastName, role, warehouseId } = req.body;
 
-    if (role && !['admin', 'store'].includes(role)) {
-      res.status(400).json({ message: 'Role must be admin or store' });
+    const [existing] = await db.select({ role: users.role, warehouseId: users.warehouseId })
+      .from(users).where(eq(users.id, id));
+
+    if (!existing) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    if (role && !(ROLES as readonly string[]).includes(role)) {
+      res.status(400).json({ message: 'Role must be admin, store or superadmin' });
+      return;
+    }
+
+    // Solo un superadmin puede asignar el rol superadmin
+    if (role === 'superadmin' && req.user!.role !== 'superadmin') {
+      res.status(403).json({ message: 'Only a superadmin can assign the superadmin role' });
       return;
     }
 
@@ -125,24 +154,29 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
       }
     }
 
+    const finalRole = role !== undefined ? role : existing.role;
+    const finalWarehouseId = warehouseId !== undefined
+      ? (warehouseId || null)
+      : existing.warehouseId;
+    const warehouseError = await validateWarehouseForRole(finalRole, finalWarehouseId);
+    if (warehouseError) {
+      res.status(400).json({ message: warehouseError });
+      return;
+    }
+
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
 
     if (email !== undefined) updateData.email = email;
     if (name !== undefined) updateData.name = name;
     if (lastName !== undefined) updateData.lastName = lastName;
     if (role !== undefined) updateData.role = role;
-    if (warehouseId !== undefined) updateData.warehouseId = warehouseId;
+    if (warehouseId !== undefined) updateData.warehouseId = finalWarehouseId;
     if (password !== undefined && password !== '') updateData.password = await bcrypt.hash(password, 10);
 
     const [user] = await db.update(users)
       .set(updateData)
       .where(eq(users.id, id))
       .returning(userColumns);
-
-    if (!user) {
-      res.status(404).json({ message: 'User not found' });
-      return;
-    }
 
     res.json(user);
   } catch (error) {
