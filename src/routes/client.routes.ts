@@ -1,25 +1,45 @@
 import { Router, Request, Response } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { clients, orders, orderItems, products } from '../db/schema';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/clients
-router.get('/', async (_req: Request, res: Response): Promise<void> => {
+// GET /api/clients?search=...
+router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const allClients = await db.select().from(clients);
-    res.json(allClients);
+    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+
+    const whereClause = search ? or(
+      ilike(clients.name, `%${search}%`),
+      ilike(clients.phone, `%${search}%`)
+    ) : undefined;
+
+    const [{ total }] = await db.select({ total: count() }).from(clients).where(whereClause);
+    const data = await db.select().from(clients).where(whereClause).orderBy(desc(clients.updatedAt)).limit(limit).offset(offset);
+
+    res.json({
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching clients' });
   }
 });
 
 // GET /api/clients/:id
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [client] = await db.select().from(clients).where(eq(clients.id, id));
@@ -49,7 +69,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
           product: {
             id: products.id,
             name: products.name,
-            material: products.material,
+            productType: products.productType,
             measurement: products.measurement,
           },
         })
@@ -68,7 +88,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/clients
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, phone } = req.body;
 
@@ -86,13 +106,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // PUT /api/clients/:id
-router.put('/:id', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const { name, phone } = req.body;
 
     const [client] = await db.update(clients)
-      .set({ name, phone })
+      .set({ name, phone, updatedAt: new Date() })
       .where(eq(clients.id, id))
       .returning();
 
@@ -103,7 +123,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 // DELETE /api/clients/:id
-router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     await db.delete(clients).where(eq(clients.id, id));

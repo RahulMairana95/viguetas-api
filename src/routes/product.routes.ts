@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, count, ilike, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { products } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
@@ -8,18 +8,35 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/products
-router.get('/', async (_req: Request, res: Response): Promise<void> => {
+// GET /api/products?search=...
+router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const allProducts = await db.select().from(products);
-    res.json(allProducts);
+    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+
+    const whereClause = search ? ilike(products.name, `%${search}%`) : undefined;
+
+    const [{ total }] = await db.select({ total: count() }).from(products).where(whereClause);
+    const data = await db.select().from(products).where(whereClause).orderBy(desc(products.updatedAt)).limit(limit).offset(offset);
+
+    res.json({
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching products' });
   }
 });
 
 // GET /api/products/:id
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [product] = await db.select().from(products).where(eq(products.id, id));
@@ -38,14 +55,21 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 // POST /api/products
 router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, material, measurement } = req.body;
+    const { name, productType, measurement, price, description } = req.body;
 
-    if (!name || !material || !measurement) {
-      res.status(400).json({ message: 'Name, material and measurement are required' });
+    if (!name || !productType || !measurement) {
+      res.status(400).json({ message: 'Name, productType and measurement are required' });
       return;
     }
 
-    const [product] = await db.insert(products).values({ name, material, measurement }).returning();
+    if (!['vigueta', 'plastoformo'].includes(productType)) {
+      res.status(400).json({ message: 'productType must be vigueta or plastoformo' });
+      return;
+    }
+
+    const [product] = await db.insert(products)
+      .values({ name, productType, measurement, price, description })
+      .returning();
 
     res.status(201).json(product);
   } catch (error) {
@@ -57,12 +81,22 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { name, material, measurement } = req.body;
+    const { name, productType, measurement, price, description } = req.body;
+
+    if (productType && !['vigueta', 'plastoformo'].includes(productType)) {
+      res.status(400).json({ message: 'productType must be vigueta or plastoformo' });
+      return;
+    }
 
     const [product] = await db.update(products)
-      .set({ name, material, measurement })
+      .set({ name, productType, measurement, price, description, updatedAt: new Date() })
       .where(eq(products.id, id))
       .returning();
+
+    if (!product) {
+      res.status(404).json({ message: 'Product not found' });
+      return;
+    }
 
     res.json(product);
   } catch (error) {
