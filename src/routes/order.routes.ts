@@ -39,6 +39,7 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
       deliveryPlace: orders.deliveryPlace,
       deliveryDate: orders.deliveryDate,
       status: orders.status,
+      advance: orders.advance,
       createdAt: orders.createdAt,
       client: {
         id: clients.id,
@@ -64,6 +65,7 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
         const items = await db.select({
           id: orderItems.id,
           quantity: orderItems.quantity,
+          unitPrice: orderItems.unitPrice,
           product: {
             id: products.id,
             name: products.name,
@@ -75,7 +77,14 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
           .innerJoin(products, eq(orderItems.productId, products.id))
           .where(eq(orderItems.orderId, order.id));
 
-        return { ...order, items };
+        return {
+          ...order,
+          items,
+          total: items.reduce(
+            (acc, item) => acc + (Number(item.unitPrice) || 0) * item.quantity,
+            0
+          ),
+        };
       })
     );
 
@@ -104,6 +113,7 @@ router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
       deliveryPlace: orders.deliveryPlace,
       deliveryDate: orders.deliveryDate,
       status: orders.status,
+      advance: orders.advance,
       createdAt: orders.createdAt,
       client: {
         id: clients.id,
@@ -129,6 +139,7 @@ router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
     const items = await db.select({
       id: orderItems.id,
       quantity: orderItems.quantity,
+      unitPrice: orderItems.unitPrice,
       product: {
         id: products.id,
         name: products.name,
@@ -139,6 +150,11 @@ router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
       .from(orderItems)
       .innerJoin(products, eq(orderItems.productId, products.id))
       .where(eq(orderItems.orderId, id));
+
+    const total = items.reduce(
+      (acc, item) => acc + (Number(item.unitPrice) || 0) * item.quantity,
+      0
+    );
 
     // Get productions for this order
     const orderProductions = await db.select().from(productions)
@@ -156,7 +172,7 @@ router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
       .innerJoin(warehouses, eq(sales.warehouseId, warehouses.id))
       .where(eq(sales.orderId, id));
 
-    res.json({ ...order, items, productions: orderProductions, sales: ventasVinculadas });
+    res.json({ ...order, items, total, productions: orderProductions, sales: ventasVinculadas });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching order' });
   }
@@ -165,7 +181,7 @@ router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 // POST /api/orders
 router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { clientId, deliveryPlace, deliveryDate, items } = req.body;
+    const { clientId, deliveryPlace, deliveryDate, items, advance } = req.body;
 
     if (!clientId || !deliveryPlace || !deliveryDate || !items?.length) {
       res.status(400).json({ message: 'clientId, deliveryPlace, deliveryDate and items are required' });
@@ -178,6 +194,31 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
         res.status(400).json({ message: 'Cada línea debe tener productId y cantidad entera mayor a cero' });
         return;
       }
+      if (item.unitPrice !== undefined && item.unitPrice !== null &&
+          (typeof item.unitPrice !== 'number' || item.unitPrice < 0)) {
+        res.status(400).json({ message: 'unitPrice debe ser un número mayor o igual a cero' });
+        return;
+      }
+    }
+
+    const advanceNumber = advance === undefined || advance === null || advance === ''
+      ? 0
+      : Number(advance);
+
+    if (Number.isNaN(advanceNumber) || advanceNumber < 0) {
+      res.status(400).json({ message: 'El adelanto debe ser un número mayor o igual a cero' });
+      return;
+    }
+
+    const total = items.reduce(
+      (acc: number, item: { quantity: number; unitPrice?: number | null }) =>
+        acc + item.quantity * (item.unitPrice ?? 0),
+      0
+    );
+
+    if (advanceNumber > total) {
+      res.status(400).json({ message: 'El adelanto no puede ser mayor que el total del pedido' });
+      return;
     }
 
     const result = await db.transaction(async (tx) => {
@@ -188,19 +229,24 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
           deliveryPlace,
           deliveryDate: new Date(deliveryDate),
           userId: req.user!.userId,
+          advance: advanceNumber.toFixed(2),
         })
         .returning();
 
       // Create order items
       const orderItemsResult = await tx.insert(orderItems)
-        .values(items.map((item: { productId: string; quantity: number }) => ({
+        .values(items.map((item: { productId: string; quantity: number; unitPrice?: number | null }) => ({
           orderId: order.id,
           productId: item.productId,
           quantity: item.quantity,
+          unitPrice:
+            item.unitPrice !== undefined && item.unitPrice !== null
+              ? Number(item.unitPrice).toFixed(2)
+              : null,
         })))
         .returning();
 
-      return { ...order, items: orderItemsResult };
+      return { ...order, items: orderItemsResult, total };
     });
 
     res.status(201).json(result);
