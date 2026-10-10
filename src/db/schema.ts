@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex, text,
+  pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex, text, boolean,
 } from 'drizzle-orm/pg-core';
 
 export const roleEnum = pgEnum('role', ['admin', 'promoter', 'superadmin']);
@@ -103,6 +103,9 @@ export const orders = pgTable('orders', {
   userId: uuid('user_id').references(() => users.id).notNull(),
   // Adelanto pagado por el cliente al registrar el pedido
   advance: decimal('advance', { precision: 10, scale: 2 }).notNull().default('0'),
+  // true cuando al completar el pedido se descontó stock (evita descontar dos veces
+  // o restaurar stock que nunca se descontó en pedidos antiguos)
+  stockDeducted: boolean('stock_deducted').notNull().default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
