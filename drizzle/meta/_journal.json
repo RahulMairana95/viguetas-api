@@ -71,6 +71,20 @@
       "when": 1791300000000,
       "tag": "0009_rename_store_role_to_promoter",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791504000000,
+      "tag": "0010_order_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791590400000,
+      "tag": "0011_order_stock_deducted",
+      "breakpoints": true
     }
   ]
 }
