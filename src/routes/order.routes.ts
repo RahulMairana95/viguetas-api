@@ -1,23 +1,37 @@
 import { Router, Request, Response } from 'express';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
-import { orders, orderItems, clients, products, users, productions } from '../db/schema';
+import { orders, orderItems, clients, products, users, productions, sales, warehouses } from '../db/schema';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
 router.use(authMiddleware);
 
-// GET /api/orders
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+// GET /api/orders?search=...
+router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
+    const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { status, clientId } = req.query;
 
     const conditions = [];
     if (status) conditions.push(eq(orders.status, status as 'pending' | 'completed' | 'cancelled'));
     if (clientId) conditions.push(eq(orders.clientId, clientId as string));
+    if (search) conditions.push(or(
+      ilike(orders.deliveryPlace, `%${search}%`),
+      ilike(clients.name, `%${search}%`)
+    ));
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+
+    const [{ total }] = await db.select({ total: count() })
+      .from(orders)
+      .innerJoin(clients, eq(orders.clientId, clients.id))
+      .where(whereClause);
 
     const allOrders = await db.select({
       id: orders.id,
@@ -39,7 +53,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       .from(orders)
       .innerJoin(clients, eq(orders.clientId, clients.id))
       .innerJoin(users, eq(orders.userId, users.id))
-      .where(whereClause);
+      .where(whereClause)
+      .orderBy(desc(orders.updatedAt))
+      .limit(limit)
+      .offset(offset);
 
     // Get items for each order
     const ordersWithItems = await Promise.all(
@@ -50,7 +67,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
           product: {
             id: products.id,
             name: products.name,
-            material: products.material,
+            productType: products.productType,
             measurement: products.measurement,
           },
         })
@@ -62,14 +79,22 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       })
     );
 
-    res.json(ordersWithItems);
+    res.json({
+      data: ordersWithItems,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching orders' });
   }
 });
 
 // GET /api/orders/:id
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
 
@@ -107,7 +132,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       product: {
         id: products.id,
         name: products.name,
-        material: products.material,
+        productType: products.productType,
         measurement: products.measurement,
       },
     })
@@ -119,7 +144,19 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     const orderProductions = await db.select().from(productions)
       .where(eq(productions.orderId, id));
 
-    res.json({ ...order, items, productions: orderProductions });
+    // Get sales linked to this order
+    const ventasVinculadas = await db.select({
+      id: sales.id,
+      clientId: sales.clientId,
+      warehouseId: sales.warehouseId,
+      date: sales.date,
+      warehouseName: warehouses.name,
+    })
+      .from(sales)
+      .innerJoin(warehouses, eq(sales.warehouseId, warehouses.id))
+      .where(eq(sales.orderId, id));
+
+    res.json({ ...order, items, productions: orderProductions, sales: ventasVinculadas });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching order' });
   }
@@ -133,6 +170,14 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
     if (!clientId || !deliveryPlace || !deliveryDate || !items?.length) {
       res.status(400).json({ message: 'clientId, deliveryPlace, deliveryDate and items are required' });
       return;
+    }
+
+    for (const item of items) {
+      if (!item.productId || typeof item.quantity !== 'number' ||
+          !Number.isInteger(item.quantity) || item.quantity <= 0) {
+        res.status(400).json({ message: 'Cada línea debe tener productId y cantidad entera mayor a cero' });
+        return;
+      }
     }
 
     const result = await db.transaction(async (tx) => {
@@ -164,6 +209,28 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
   }
 });
 
+// GET /api/orders/:id/sales — ventas vinculadas al pedido
+router.get('/:id/sales', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+
+    const resultado = await db.select({
+      id: sales.id,
+      clientId: sales.clientId,
+      warehouseId: sales.warehouseId,
+      date: sales.date,
+      warehouseName: warehouses.name,
+    })
+      .from(sales)
+      .innerJoin(warehouses, eq(sales.warehouseId, warehouses.id))
+      .where(eq(sales.orderId, id));
+
+    res.json({ data: resultado });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching sales for order' });
+  }
+});
+
 // PATCH /api/orders/:id/status
 router.patch('/:id/status', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -181,7 +248,7 @@ router.patch('/:id/status', roleMiddleware('admin'), async (req: Request, res: R
     }
 
     const [order] = await db.update(orders)
-      .set({ status })
+      .set({ status, updatedAt: new Date() })
       .where(eq(orders.id, id))
       .returning();
 
