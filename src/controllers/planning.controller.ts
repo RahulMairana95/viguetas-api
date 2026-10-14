@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { orders, orderItems, stock, products } from '../db/schema';
+import { orders, orderItems, stock, products, users, warehouses } from '../db/schema';
 import { eq, sum } from 'drizzle-orm';
 
 export async function getPlanningReport(req: Request, res: Response): Promise<void> {
@@ -14,10 +14,27 @@ export async function getPlanningReport(req: Request, res: Response): Promise<vo
       .where(eq(orders.status, 'pending'))
       .groupBy(orderItems.productId);
 
-    const stockPorProducto = await db
-      .select({ productId: stock.productId, total: sum(stock.quantity) })
-      .from(stock)
-      .groupBy(stock.productId);
+    // Disponible: SOLO el almacén del usuario autenticado (donde se surten los pedidos).
+    // Las tiendas quedan fuera del cálculo porque su material está en otros lugares
+    // para recolección local. Si el usuario no tiene almacén asignado (p. ej. un
+    // superadmin), se toman los almacenes de tipo fábrica.
+    const [usuario] = await db
+      .select({ warehouseId: users.warehouseId })
+      .from(users)
+      .where(eq(users.id, req.user!.userId));
+
+    const stockPorProducto = usuario?.warehouseId
+      ? await db
+          .select({ productId: stock.productId, total: sum(stock.quantity) })
+          .from(stock)
+          .where(eq(stock.warehouseId, usuario.warehouseId))
+          .groupBy(stock.productId)
+      : await db
+          .select({ productId: stock.productId, total: sum(stock.quantity) })
+          .from(stock)
+          .innerJoin(warehouses, eq(stock.warehouseId, warehouses.id))
+          .where(eq(warehouses.type, 'factory'))
+          .groupBy(stock.productId);
 
     const mapaDemanda = Object.fromEntries(
       demandaPorProducto.map((d) => [d.productId, Number(d.total) || 0])
