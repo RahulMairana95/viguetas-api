@@ -7,6 +7,8 @@ export const warehouseTypeEnum = pgEnum('warehouse_type', ['factory', 'store']);
 export const orderStatusEnum = pgEnum('order_status', ['pending', 'completed', 'cancelled']);
 export const productionStatusEnum = pgEnum('production_status', ['pending', 'completed']);
 export const productTypeEnum = pgEnum('product_type', ['vigueta', 'plastoformo']);
+export const puntalMaterialEnum = pgEnum('puntal_material', ['madera', 'metal', 'solera']);
+export const puntalStatusEnum = pgEnum('puntal_status', ['en_obra', 'en_almacen']);
 
 export const warehouses = pgTable('warehouses', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -128,6 +130,24 @@ export const productions = pgTable('productions', {
   date: timestamp('date').defaultNow(),
   userId: uuid('user_id').references(() => users.id).notNull(),
   notes: varchar('notes', { length: 500 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Préstamo de puntales/soleras a un cliente. Registro 100% independiente:
+// NO tiene foreign keys (el cliente se guarda como texto, no se relaciona
+// con `clients` ni con ninguna otra tabla).
+export const puntales = pgTable('puntales', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  // Cliente en texto libre (sin relación con la tabla clients)
+  clientName: varchar('client_name', { length: 255 }).notNull(),
+  loanDate: timestamp('loan_date').notNull(),
+  pickupDate: timestamp('pickup_date').notNull(),
+  material: puntalMaterialEnum('material').notNull(),
+  quantity: integer('quantity').notNull(),
+  place: varchar('place', { length: 500 }).notNull(),
+  description: text('description'),
+  status: puntalStatusEnum('status').notNull().default('en_obra'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
