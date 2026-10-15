@@ -1,15 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { eq, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
-import { clients, orders, orderItems, products } from '../db/schema';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { clients, sales, saleItems, products } from '../db/schema';
+import { requireAuth, requireRole } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
 // GET /api/clients?search=...
-router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -38,8 +38,8 @@ router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: R
   }
 });
 
-// GET /api/clients/:id
-router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
+// GET /api/clients/:id — el detalle incluye las ventas del cliente
+router.get('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [client] = await db.select().from(clients).where(eq(clients.id, id));
@@ -49,23 +49,24 @@ router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res
       return;
     }
 
-    // Get client orders
-    const clientOrders = await db.select({
-      id: orders.id,
-      deliveryPlace: orders.deliveryPlace,
-      deliveryDate: orders.deliveryDate,
-      status: orders.status,
-      createdAt: orders.createdAt,
+    const clientSales = await db.select({
+      id: sales.id,
+      status: sales.status,
+      deliveryDate: sales.deliveryDate,
+      deliveryPlace: sales.deliveryPlace,
+      deliveredAt: sales.deliveredAt,
+      date: sales.date,
     })
-      .from(orders)
-      .where(eq(orders.clientId, id));
+      .from(sales)
+      .where(eq(sales.clientId, id))
+      .orderBy(desc(sales.date));
 
-    // Get order items for each order
-    const ordersWithItems = await Promise.all(
-      clientOrders.map(async (order) => {
+    const salesWithItems = await Promise.all(
+      clientSales.map(async (sale) => {
         const items = await db.select({
-          id: orderItems.id,
-          quantity: orderItems.quantity,
+          id: saleItems.id,
+          quantity: saleItems.quantity,
+          unitPrice: saleItems.unitPrice,
           product: {
             id: products.id,
             name: products.name,
@@ -73,22 +74,22 @@ router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res
             measurement: products.measurement,
           },
         })
-          .from(orderItems)
-          .innerJoin(products, eq(orderItems.productId, products.id))
-          .where(eq(orderItems.orderId, order.id));
+          .from(saleItems)
+          .innerJoin(products, eq(saleItems.productId, products.id))
+          .where(eq(saleItems.saleId, sale.id));
 
-        return { ...order, items };
+        return { ...sale, items };
       })
     );
 
-    res.json({ ...client, orders: ordersWithItems });
+    res.json({ ...client, sales: salesWithItems });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching client' });
   }
 });
 
-// POST /api/clients
-router.post('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
+// POST /api/clients — store también puede registrar clientes
+router.post('/', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, phone } = req.body;
 
@@ -106,7 +107,7 @@ router.post('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: 
 });
 
 // PUT /api/clients/:id
-router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const { name, phone } = req.body;
@@ -123,12 +124,17 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 });
 
 // DELETE /api/clients/:id
-router.delete('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     await db.delete(clients).where(eq(clients.id, id));
     res.json({ message: 'Client deleted' });
-  } catch (error) {
+  } catch (error: any) {
+    // 23503: el cliente tiene ventas registradas
+    if ((error?.code ?? error?.cause?.code) === '23503') {
+      res.status(409).json({ message: 'Este cliente tiene ventas registradas y no se puede eliminar' });
+      return;
+    }
     res.status(500).json({ message: 'Error deleting client' });
   }
 });

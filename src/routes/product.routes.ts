@@ -2,14 +2,14 @@ import { Router, Request, Response } from 'express';
 import { eq, count, ilike, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { products } from '../db/schema';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { requireAuth, requireRole } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
 // GET /api/products?search=...
-router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -36,7 +36,7 @@ router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: R
 });
 
 // GET /api/products/:id
-router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [product] = await db.select().from(products).where(eq(products.id, id));
@@ -53,7 +53,7 @@ router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res
 });
 
 // POST /api/products
-router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, productType, measurement, price, description } = req.body;
 
@@ -78,7 +78,7 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 });
 
 // PUT /api/products/:id
-router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const { name, productType, measurement, price, description } = req.body;
@@ -105,7 +105,7 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 });
 
 // DELETE /api/products/:id
-router.delete('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     await db.delete(products).where(eq(products.id, id));

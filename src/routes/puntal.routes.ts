@@ -2,11 +2,11 @@ import { Router, Request, Response } from 'express';
 import { eq, and, count, ilike, asc, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { puntales } from '../db/schema';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { requireAuth, requireRole } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
 const MATERIALS = ['madera', 'metal', 'solera'] as const;
 const STATUSES = ['en_obra', 'en_almacen'] as const;
@@ -87,7 +87,7 @@ function readPuntal(body: Record<string, unknown>): { error: string } | { input:
 //
 // Registro independiente: no se une con clients ni con ninguna otra tabla.
 // `search` busca por cliente; `status` filtra por estado ('all' = sin filtro).
-router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const { status } = req.query;
@@ -134,7 +134,7 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
 });
 
 // GET /api/puntales/:id
-router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const [puntal] = await db.select().from(puntales).where(eq(puntales.id, req.params.id as string));
 
@@ -150,7 +150,7 @@ router.get('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 });
 
 // POST /api/puntales — Nuevo préstamo
-router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const result = readPuntal(req.body);
     if ('error' in result) {
@@ -167,7 +167,7 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 });
 
 // PUT /api/puntales/:id — Editar préstamo completo
-router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
 
@@ -197,7 +197,7 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 // PATCH /api/puntales/:id/status — Cambiar solo el estado (En obra / En Almacén)
 router.patch(
   '/:id/status',
-  roleMiddleware('admin'),
+  requireRole('admin'),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const id = req.params.id as string;
