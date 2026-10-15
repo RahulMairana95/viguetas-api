@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex, text,
+  pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex, text, boolean,
 } from 'drizzle-orm/pg-core';
 
 export const roleEnum = pgEnum('role', ['admin', 'promoter', 'superadmin']);
@@ -7,6 +7,8 @@ export const warehouseTypeEnum = pgEnum('warehouse_type', ['factory', 'store']);
 export const orderStatusEnum = pgEnum('order_status', ['pending', 'completed', 'cancelled']);
 export const productionStatusEnum = pgEnum('production_status', ['pending', 'completed']);
 export const productTypeEnum = pgEnum('product_type', ['vigueta', 'plastoformo']);
+export const puntalMaterialEnum = pgEnum('puntal_material', ['madera', 'metal', 'solera']);
+export const puntalStatusEnum = pgEnum('puntal_status', ['en_obra', 'en_almacen']);
 
 export const warehouses = pgTable('warehouses', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -101,6 +103,11 @@ export const orders = pgTable('orders', {
   deliveryDate: timestamp('delivery_date').notNull(),
   status: orderStatusEnum('status').notNull().default('pending'),
   userId: uuid('user_id').references(() => users.id).notNull(),
+  // Adelanto pagado por el cliente al registrar el pedido
+  advance: decimal('advance', { precision: 10, scale: 2 }).notNull().default('0'),
+  // true cuando al completar el pedido se descontó stock (evita descontar dos veces
+  // o restaurar stock que nunca se descontó en pedidos antiguos)
+  stockDeducted: boolean('stock_deducted').notNull().default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -110,6 +117,8 @@ export const orderItems = pgTable('order_items', {
   orderId: uuid('order_id').references(() => orders.id).notNull(),
   productId: uuid('product_id').references(() => products.id).notNull(),
   quantity: integer('quantity').notNull(),
+  // Precio unitario capturado en el pedido (editable, se toma del producto)
+  unitPrice: decimal('unit_price', { precision: 10, scale: 2 }),
 });
 
 export const productions = pgTable('productions', {
@@ -121,6 +130,24 @@ export const productions = pgTable('productions', {
   date: timestamp('date').defaultNow(),
   userId: uuid('user_id').references(() => users.id).notNull(),
   notes: varchar('notes', { length: 500 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Préstamo de puntales/soleras a un cliente. Registro 100% independiente:
+// NO tiene foreign keys (el cliente se guarda como texto, no se relaciona
+// con `clients` ni con ninguna otra tabla).
+export const puntales = pgTable('puntales', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  // Cliente en texto libre (sin relación con la tabla clients)
+  clientName: varchar('client_name', { length: 255 }).notNull(),
+  loanDate: timestamp('loan_date').notNull(),
+  pickupDate: timestamp('pickup_date').notNull(),
+  material: puntalMaterialEnum('material').notNull(),
+  quantity: integer('quantity').notNull(),
+  place: varchar('place', { length: 500 }).notNull(),
+  description: text('description'),
+  status: puntalStatusEnum('status').notNull().default('en_obra'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
