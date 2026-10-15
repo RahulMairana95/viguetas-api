@@ -9,7 +9,7 @@ const router: ReturnType<typeof Router> = Router();
 router.use(requireAuth);
 
 // GET /api/clients?search=...
-router.get('/', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireRole('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -39,7 +39,7 @@ router.get('/', requireRole('admin', 'store'), async (req: Request, res: Respons
 });
 
 // GET /api/clients/:id — el detalle incluye las ventas del cliente
-router.get('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', requireRole('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [client] = await db.select().from(clients).where(eq(clients.id, id));
@@ -88,8 +88,8 @@ router.get('/:id', requireRole('admin', 'store'), async (req: Request, res: Resp
   }
 });
 
-// POST /api/clients — store también puede registrar clientes
-router.post('/', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+// POST /api/clients — promoter también puede registrar clientes
+router.post('/', requireRole('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, phone } = req.body;
 
@@ -107,7 +107,7 @@ router.post('/', requireRole('admin', 'store'), async (req: Request, res: Respon
 });
 
 // PUT /api/clients/:id
-router.put('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const { name, phone } = req.body;
@@ -124,7 +124,7 @@ router.put('/:id', requireRole('admin', 'store'), async (req: Request, res: Resp
 });
 
 // DELETE /api/clients/:id
-router.delete('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', requireRole('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     await db.delete(clients).where(eq(clients.id, id));

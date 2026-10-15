@@ -9,8 +9,8 @@ const router: ReturnType<typeof Router> = Router();
 router.use(requireAuth);
 
 // GET /api/warehouses?search=...
-// Lectura abierta a store: los formularios de Ventas y Stock la necesitan.
-router.get('/', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+// Lectura abierta a promoter: los formularios de Ventas y Stock la necesitan.
+router.get('/', requireRole('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -39,7 +39,7 @@ router.get('/', requireRole('admin', 'store'), async (req: Request, res: Respons
 });
 
 // GET /api/warehouses/:id
-router.get('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', requireRole('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [warehouse] = await db.select().from(warehouses).where(eq(warehouses.id, id));

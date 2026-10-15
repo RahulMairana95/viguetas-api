@@ -1,12 +1,10 @@
 import { Request } from 'express';
 
-type Resultado = { warehouseId: string } | { error: string };
+type Resultado = { warehouseId: string | null };
 
-// Almacén propio del usuario: para store es el origen de todas sus líneas;
-// para admin es solo el origen por defecto (fábrica), puede elegir otro.
+// Almacén propio del usuario: para promoter es el origen de todas sus líneas;
+// para admin es solo el origen por defecto (si tiene fábrica asignada), y si no
+// tiene almacén puede elegir libremente el origen en cada línea.
 export function resolveWarehouse(req: Request): Resultado {
-  if (!req.userAlmacenId) {
-    return { error: 'Tu usuario no tiene un almacén asignado. Contacta al administrador.' };
-  }
-  return { warehouseId: req.userAlmacenId };
+  return { warehouseId: req.userAlmacenId ?? null };
 }

@@ -3,9 +3,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-// El enum de la base conserva 'superadmin' (Postgres no permite quitar un valor
-// con un ALTER simple), pero el código NO lo usa. El rol efectivo es Rol = 'admin' | 'store'.
-export const roleEnum = pgEnum('role', ['superadmin', 'admin', 'store']);
+// Solo 2 roles: admin y promoter (el residual superadmin se eliminó en 0016).
+export const roleEnum = pgEnum('role', ['admin', 'promoter']);
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['factory', 'store']);
 export const saleStatusEnum = pgEnum('sale_status', ['scheduled', 'completed', 'cancelled']);
 export const productionStatusEnum = pgEnum('production_status', ['pending', 'completed']);
@@ -29,7 +28,7 @@ export const users = pgTable('users', {
   password: varchar('password', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   lastName: varchar('last_name', { length: 255 }),
-  role: roleEnum('role').notNull().default('store'),
+  role: roleEnum('role').notNull().default('promoter'),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id),
   // Un usuario desactivado no puede iniciar sesión ni renovar su token.
   isActive: boolean('is_active').notNull().default(true),
@@ -40,7 +39,7 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export type Rol = 'admin' | 'store';
+export type Rol = 'admin' | 'promoter';
 
 export const products = pgTable('products', {
   id: uuid('id').defaultRandom().primaryKey(),

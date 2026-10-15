@@ -47,7 +47,7 @@ export const requireAuth = (
   }
 };
 
-// Con 2 roles no hay pase automático: admin y store se validan igual.
+// Con 2 roles no hay pase automático: admin y promoter se validan igual.
 export function requireRole(...rolesPermitidos: Rol[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const rol = req.userRol;

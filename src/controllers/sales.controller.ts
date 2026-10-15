@@ -14,10 +14,10 @@ type ItemVenta = {
   longitud?: string | null;
 };
 
-// Normaliza las líneas del body. Para store el origen SIEMPRE es su tienda,
+// Normaliza las líneas del body. Para promoter el origen SIEMPRE es su tienda,
 // sin importar lo que mande el frontend; para admin puede elegir por línea
-// (por defecto, su propio almacén, la fábrica).
-function normalizarLineas(items: unknown, origenPropio: string, esAdmin: boolean): (Linea & { unitPrice: string | null })[] {
+// (por defecto, su propio almacén si tiene uno asignado).
+function normalizarLineas(items: unknown, origenPropio: string | null, esAdmin: boolean): (Linea & { unitPrice: string | null })[] {
   if (!Array.isArray(items) || items.length === 0) {
     throw new HttpError(400, 'Agrega al menos un producto');
   }
@@ -30,11 +30,15 @@ function normalizarLineas(items: unknown, origenPropio: string, esAdmin: boolean
         (typeof i.unitPrice !== 'number' || i.unitPrice < 0)) {
       throw new HttpError(400, 'unitPrice debe ser un número mayor o igual a cero');
     }
+    const warehouseId = esAdmin ? (i.warehouseId ?? origenPropio) : origenPropio;
+    if (!warehouseId) {
+      throw new HttpError(400, 'Cada línea debe indicar el almacén de origen y tu usuario no tiene un almacén asignado');
+    }
     return {
       productId: i.productId,
       quantity: i.quantity,
       unitPrice: i.unitPrice == null || (i.unitPrice as unknown) === '' ? null : String(i.unitPrice),
-      warehouseId: (esAdmin ? (i.warehouseId ?? origenPropio) : origenPropio),
+      warehouseId,
       longitud: i.longitud?.trim() ? i.longitud.trim() : null,
     };
   });
@@ -74,8 +78,8 @@ export async function listSales(req: Request, res: Response): Promise<void> {
     }
     if (clientId) condiciones.push(eq(sales.clientId, clientId as string));
 
-    // store: solo ventas con al menos una línea que salga de su almacén
-    if (req.userRol === 'store') {
+    // promoter: solo ventas con al menos una línea que salga de su almacén
+    if (req.userRol === 'promoter') {
       if (!req.userAlmacenId) {
         res.json({ data: [], pagination: { page: 1, limit: 0, total: 0, totalPages: 0 } });
         return;
@@ -173,10 +177,9 @@ export async function createSale(req: Request, res: Response): Promise<void> {
     if (!clientId) throw new HttpError(400, 'El cliente es requerido');
     if (programada && !esAdmin) throw new HttpError(403, 'Solo un admin puede programar ventas');
 
-    const r = resolveWarehouse(req);
-    if ('error' in r) throw new HttpError(400, r.error);
+    const { warehouseId: origenPropio } = resolveWarehouse(req);
 
-    const lineas = normalizarLineas(items, r.warehouseId, esAdmin);
+    const lineas = normalizarLineas(items, origenPropio, esAdmin);
 
     if (programada) {
       if (!deliveryDate) throw new HttpError(400, 'La fecha de entrega es requerida');
@@ -214,8 +217,7 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
     const id = req.params.id as string;
     const { clientId, deliveryDate, deliveryPlace, adelanto, registeredDate, items } = req.body;
 
-    const r = resolveWarehouse(req);
-    if ('error' in r) throw new HttpError(400, r.error);
+    const { warehouseId: origenPropio } = resolveWarehouse(req);
 
     await db.transaction(async (tx) => {
       const [v] = await tx.select().from(sales).where(eq(sales.id, id)).for('update');
@@ -233,7 +235,7 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
       }).where(eq(sales.id, id));
 
       if (items) {
-        const lineas = normalizarLineas(items, r.warehouseId, true);
+        const lineas = normalizarLineas(items, origenPropio, true);
         await tx.delete(saleItems).where(eq(saleItems.saleId, id));
         await tx.insert(saleItems).values(lineas.map((l) => ({ ...l, saleId: id })));
       }
@@ -255,8 +257,7 @@ export async function deliverSale(req: Request, res: Response): Promise<void> {
     const id = req.params.id as string;
     const { items } = req.body; // opcional: líneas finales, con el origen ajustado el día de la entrega
 
-    const r = resolveWarehouse(req);
-    if ('error' in r) throw new HttpError(400, r.error);
+    const { warehouseId: origenPropio } = resolveWarehouse(req);
 
     const venta = await db.transaction(async (tx) => {
       const [v] = await tx.select().from(sales).where(eq(sales.id, id)).for('update');
@@ -264,7 +265,7 @@ export async function deliverSale(req: Request, res: Response): Promise<void> {
       if (v.status !== 'scheduled') throw new HttpError(409, 'Esta venta ya no está programada');
 
       if (items?.length) {
-        const nuevas = normalizarLineas(items, r.warehouseId, true);
+        const nuevas = normalizarLineas(items, origenPropio, true);
         await tx.delete(saleItems).where(eq(saleItems.saleId, id));
         await tx.insert(saleItems).values(nuevas.map((l) => ({ ...l, saleId: id })));
       }

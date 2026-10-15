@@ -6,9 +6,9 @@ const router: ReturnType<typeof Router> = Router();
 
 router.use(requireAuth);
 
-router.get('/', requireRole('admin', 'store'), listSales);
-// store: solo ventas inmediatas (se valida dentro de createSale)
-router.post('/', requireRole('admin', 'store'), createSale);
+router.get('/', requireRole('admin', 'promoter'), listSales);
+// promoter: solo ventas inmediatas (se valida dentro de createSale)
+router.post('/', requireRole('admin', 'promoter'), createSale);
 // Programar, editar, entregar y cancelar: solo admin
 router.patch('/:id', requireRole('admin'), updateSale);
 router.post('/:id/deliver', requireRole('admin'), deliverSale);

@@ -21,7 +21,7 @@ const userColumns = {
   updatedAt: users.updatedAt,
 };
 
-const ROLES_VALIDOS: Rol[] = ['admin', 'store'];
+const ROLES_VALIDOS: Rol[] = ['admin', 'promoter'];
 
 // GET /api/users?search=...
 export async function listUsers(req: Request, res: Response): Promise<void> {
@@ -73,7 +73,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
       return;
     }
     if (!ROLES_VALIDOS.includes(role)) {
-      res.status(400).json({ message: 'Rol inválido: debe ser admin o store' });
+      res.status(400).json({ message: 'Rol inválido: debe ser admin o promoter' });
       return;
     }
 
@@ -123,7 +123,7 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
     const almacenFinal = 'warehouseId' in req.body ? req.body.warehouseId : actual.warehouseId;
 
     if (!ROLES_VALIDOS.includes(rolFinal)) {
-      res.status(400).json({ message: 'Rol inválido: debe ser admin o store' });
+      res.status(400).json({ message: 'Rol inválido: debe ser admin o promoter' });
       return;
     }
 

@@ -13,7 +13,7 @@ const router: ReturnType<typeof Router> = Router();
 
 // POST /api/auth/register
 //
-// Registro público. Solo crea usuarios de tienda (store); el rol admin se
+// Registro público. Solo crea usuarios promotores (promoter); el rol admin se
 // crea desde /api/users (requiere ser admin autenticado) o con el script.
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -29,7 +29,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const check = await validateRoleWarehouse('store', warehouseId || null);
+    const check = await validateRoleWarehouse('promoter', warehouseId || null);
     if (!check.ok) {
       res.status(400).json({ message: check.error, status: 'error', data: null });
       return;
@@ -48,7 +48,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       password: hashedPassword,
       name,
       lastName: lastName || null,
-      role: 'store',
+      role: 'promoter',
       warehouseId: check.warehouseId,
     }).returning({
       id: users.id,
@@ -98,7 +98,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const payload: AuthPayload = {
       userId: user.id,
       email: user.email,
-      // El tipo de la BD aún incluye 'superadmin' (enum residual); el código solo usa Rol
       role: user.role as Rol,
       warehouseId: user.warehouseId,
     };
