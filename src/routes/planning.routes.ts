@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { getPlanningReport } from '../controllers/planning.controller';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { requireAuth, requireRole } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
-router.get('/', roleMiddleware('admin'), getPlanningReport);
+router.get('/', requireRole('admin'), getPlanningReport);
 
 export default router;

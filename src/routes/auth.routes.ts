@@ -4,33 +4,34 @@ import jwt from 'jsonwebtoken';
 import { eq } from 'drizzle-orm';
 
 import { db } from '../db';
-import { users, refreshTokens } from '../db/schema';
+import { users, refreshTokens, Rol } from '../db/schema';
 import { config } from '../config';
-import { authMiddleware, AuthPayload } from '../middleware/auth.middleware';
-import { validateWarehouseForRole } from '../utils/user-warehouse';
+import { requireAuth, AuthPayload } from '../middleware/auth.middleware';
+import { validateRoleWarehouse } from '../lib/validateRoleWarehouse';
 
 const router: ReturnType<typeof Router> = Router();
 
 // POST /api/auth/register
+//
+// Registro público. Solo crea usuarios de tienda (store); el rol admin se
+// crea desde /api/users (requiere ser admin autenticado) o con el script.
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, name, lastName, role, warehouseId } = req.body;
+    const { email, password, name, lastName, warehouseId } = req.body;
 
     if (!email || !password || !name) {
       res.status(400).json({ message: 'Email, password and name are required', status: 'error', data: null });
       return;
     }
 
-    // Registro público solo crea usuarios promoter. admin y superadmin se
-    // crean desde /api/users (requiere ser admin autenticado).
-    if (role && role !== 'promoter') {
-      res.status(400).json({ message: 'El registro público solo permite el rol promoter', status: 'error', data: null });
+    if (password.length < 8) {
+      res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres', status: 'error', data: null });
       return;
     }
 
-    const warehouseError = await validateWarehouseForRole('promoter', warehouseId || null);
-    if (warehouseError) {
-      res.status(400).json({ message: warehouseError, status: 'error', data: null });
+    const check = await validateRoleWarehouse('store', warehouseId || null);
+    if (!check.ok) {
+      res.status(400).json({ message: check.error, status: 'error', data: null });
       return;
     }
 
@@ -47,8 +48,8 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       password: hashedPassword,
       name,
       lastName: lastName || null,
-      role: 'promoter',
-      warehouseId: warehouseId || null,
+      role: 'store',
+      warehouseId: check.warehouseId,
     }).returning({
       id: users.id,
       email: users.email,
@@ -87,10 +88,19 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Se valida DESPUÉS de comprobar la contraseña para no revelar
+    // si la cuenta existe o no.
+    if (!user.isActive) {
+      res.status(403).json({ message: 'Usuario desactivado. Contacta al administrador.', status: 'error', data: null });
+      return;
+    }
+
     const payload: AuthPayload = {
       userId: user.id,
       email: user.email,
-      role: user.role,
+      // El tipo de la BD aún incluye 'superadmin' (enum residual); el código solo usa Rol
+      role: user.role as Rol,
+      warehouseId: user.warehouseId,
     };
 
     const accessToken = jwt.sign(payload, config.jwtSecret, { expiresIn: '1h' });
@@ -122,6 +132,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/auth/refresh
+//
+// Se relee el usuario de la base en cada refresh para que rol y almacén
+// siempre estén al día en el token nuevo.
 router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
   try {
     const { refreshToken } = req.body;
@@ -140,11 +153,20 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
 
     const decoded = jwt.verify(refreshToken, config.jwtRefreshSecret) as AuthPayload;
 
-    const newAccessToken = jwt.sign(
-      { userId: decoded.userId, email: decoded.email, role: decoded.role },
-      config.jwtSecret,
-      { expiresIn: '1h' }
-    );
+    const [u] = await db.select().from(users).where(eq(users.id, decoded.userId));
+    if (!u || !u.isActive) {
+      res.status(401).json({ message: 'Sesión inválida', status: 'error', data: null });
+      return;
+    }
+
+    const payload: AuthPayload = {
+      userId: u.id,
+      email: u.email,
+      role: u.role as Rol,
+      warehouseId: u.warehouseId,
+    };
+
+    const newAccessToken = jwt.sign(payload, config.jwtSecret, { expiresIn: '1h' });
 
     res.json({ message: 'Token refreshed', status: 'success', data: { accessToken: newAccessToken } });
   } catch (error) {
@@ -153,7 +175,7 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/auth/logout
-router.post('/logout', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/logout', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { refreshToken } = req.body;
 
@@ -168,7 +190,7 @@ router.post('/logout', authMiddleware, async (req: Request, res: Response): Prom
 });
 
 // GET /api/auth/profile
-router.get('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/profile', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const [user] = await db.select({
       id: users.id,
@@ -177,8 +199,9 @@ router.get('/profile', authMiddleware, async (req: Request, res: Response): Prom
       lastName: users.lastName,
       role: users.role,
       warehouseId: users.warehouseId,
+      isActive: users.isActive,
       createdAt: users.createdAt,
-    }).from(users).where(eq(users.id, req.user!.userId));
+    }).from(users).where(eq(users.id, req.userId));
 
     if (!user) {
       res.status(404).json({ message: 'User not found', status: 'error', data: null });
@@ -192,7 +215,7 @@ router.get('/profile', authMiddleware, async (req: Request, res: Response): Prom
 });
 
 // PATCH /api/auth/profile
-router.patch('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.patch('/profile', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, lastName, password } = req.body;
 
@@ -205,11 +228,17 @@ router.patch('/profile', authMiddleware, async (req: Request, res: Response): Pr
 
     if (name !== undefined) updateData.name = name;
     if (lastName !== undefined) updateData.lastName = lastName;
-    if (password !== undefined) updateData.password = await bcrypt.hash(password, 10);
+    if (password !== undefined) {
+      if (password.length < 8) {
+        res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres', status: 'error', data: null });
+        return;
+      }
+      updateData.password = await bcrypt.hash(password, 10);
+    }
 
     const [user] = await db.update(users)
       .set(updateData)
-      .where(eq(users.id, req.user!.userId))
+      .where(eq(users.id, req.userId))
       .returning({
         id: users.id,
         email: users.email,
@@ -232,7 +261,7 @@ router.patch('/profile', authMiddleware, async (req: Request, res: Response): Pr
 });
 
 // PATCH /api/auth/change-password
-router.patch('/change-password', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.patch('/change-password', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { currentPassword, newPassword } = req.body;
 
@@ -241,7 +270,12 @@ router.patch('/change-password', authMiddleware, async (req: Request, res: Respo
       return;
     }
 
-    const [user] = await db.select().from(users).where(eq(users.id, req.user!.userId));
+    if (newPassword.length < 8) {
+      res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres', status: 'error', data: null });
+      return;
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.id, req.userId));
     if (!user) {
       res.status(404).json({ message: 'User not found', status: 'error', data: null });
       return;
@@ -254,10 +288,10 @@ router.patch('/change-password', authMiddleware, async (req: Request, res: Respo
     }
 
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-    
+
     await db.update(users)
       .set({ password: hashedNewPassword, updatedAt: new Date() })
-      .where(eq(users.id, req.user!.userId));
+      .where(eq(users.id, req.userId));
 
     res.json({ message: 'Contraseña actualizada correctamente', status: 'success', data: null });
   } catch (error) {
@@ -265,24 +299,7 @@ router.patch('/change-password', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-// DELETE /api/auth/profile
-router.delete('/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  try {
-    await db.delete(refreshTokens).where(eq(refreshTokens.userId, req.user!.userId));
-
-    const [deleted] = await db.delete(users)
-      .where(eq(users.id, req.user!.userId))
-      .returning({ id: users.id, email: users.email });
-
-    if (!deleted) {
-      res.status(404).json({ message: 'User not found', status: 'error', data: null });
-      return;
-    }
-
-    res.json({ message: 'User deleted', status: 'success', data: null });
-  } catch (error) {
-    res.status(500).json({ message: 'Error deleting user', status: 'error', data: null });
-  }
-});
+// No existe DELETE /api/auth/profile: los usuarios no se borran, se desactivan
+// desde /api/users/:id/deactivate (solo admin).
 
 export default router;

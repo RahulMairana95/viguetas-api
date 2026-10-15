@@ -1,15 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { eq, count, ilike, or, desc } from 'drizzle-orm';
 import { db } from '../db';
-import { warehouses } from '../db/schema';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { warehouses, users } from '../db/schema';
+import { requireAuth, requireRole } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
 // GET /api/warehouses?search=...
-router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
+// Lectura abierta a store: los formularios de Ventas y Stock la necesitan.
+router.get('/', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -38,7 +39,7 @@ router.get('/', roleMiddleware('admin', 'promoter'), async (req: Request, res: R
 });
 
 // GET /api/warehouses/:id
-router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', requireRole('admin', 'store'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const [warehouse] = await db.select().from(warehouses).where(eq(warehouses.id, id));
@@ -55,7 +56,7 @@ router.get('/:id', roleMiddleware('admin', 'promoter'), async (req: Request, res
 });
 
 // POST /api/warehouses
-router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, type, address } = req.body;
     const telefono = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
@@ -84,7 +85,10 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
 });
 
 // PUT /api/warehouses/:id
-router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+//
+// No se puede cambiar el tipo de un almacén que tiene usuarios asignados:
+// los dejaría con un rol incompatible con su almacén.
+router.put('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
     const { name, type, address } = req.body;
@@ -93,6 +97,24 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
     if (telefono && !/^[0-9+\s()-]{6,20}$/.test(telefono)) {
       res.status(400).json({ error: 'El teléfono solo puede contener números, espacios, +, - y paréntesis' });
       return;
+    }
+
+    const [almacenActual] = await db.select().from(warehouses).where(eq(warehouses.id, id));
+    if (!almacenActual) {
+      res.status(404).json({ message: 'Warehouse not found' });
+      return;
+    }
+
+    if (type && type !== almacenActual.type) {
+      if (!['factory', 'store'].includes(type)) {
+        res.status(400).json({ message: 'Type must be factory or store' });
+        return;
+      }
+      const asignados = await db.select({ id: users.id }).from(users).where(eq(users.warehouseId, id));
+      if (asignados.length > 0) {
+        res.status(400).json({ message: 'No puedes cambiar el tipo de un almacén que tiene usuarios asignados' });
+        return;
+      }
     }
 
     const [warehouse] = await db.update(warehouses)
@@ -107,12 +129,24 @@ router.put('/:id', roleMiddleware('admin'), async (req: Request, res: Response):
 });
 
 // DELETE /api/warehouses/:id
-router.delete('/:id', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
+
+    const asignados = await db.select({ id: users.id }).from(users).where(eq(users.warehouseId, id));
+    if (asignados.length > 0) {
+      res.status(400).json({ message: 'No puedes eliminar un almacén que tiene usuarios asignados' });
+      return;
+    }
+
     await db.delete(warehouses).where(eq(warehouses.id, id));
     res.json({ message: 'Warehouse deleted' });
-  } catch (error) {
+  } catch (error: any) {
+    // 23503: tiene stock, ventas u otros registros asociados
+    if ((error?.code ?? error?.cause?.code) === '23503') {
+      res.status(409).json({ message: 'Este almacén tiene registros asociados y no se puede eliminar' });
+      return;
+    }
     res.status(500).json({ message: 'Error deleting warehouse' });
   }
 });

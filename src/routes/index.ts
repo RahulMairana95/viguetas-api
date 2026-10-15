@@ -4,14 +4,11 @@ import userRoutes from './user.routes';
 import warehouseRoutes from './warehouse.routes';
 import productRoutes from './product.routes';
 import stockRoutes from './stock.routes';
-import transferRoutes from './transfer.routes';
 import clientRoutes from './client.routes';
 import saleRoutes from './sale.routes';
-import orderRoutes from './order.routes';
 import puntalRoutes from './puntal.routes';
 import productionRoutes from './production.routes';
 import planningRoutes from './planning.routes';
-import stockRequestRoutes from './stockRequest.routes';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -20,13 +17,10 @@ router.use('/users', userRoutes);
 router.use('/warehouses', warehouseRoutes);
 router.use('/products', productRoutes);
 router.use('/stock', stockRoutes);
-router.use('/transfers', transferRoutes);
 router.use('/clients', clientRoutes);
 router.use('/sales', saleRoutes);
-router.use('/orders', orderRoutes);
 router.use('/puntales', puntalRoutes);
 router.use('/productions', productionRoutes);
 router.use('/planning', planningRoutes);
-router.use('/stock-requests', stockRequestRoutes);
 
 export default router;

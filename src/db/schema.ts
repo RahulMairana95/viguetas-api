@@ -1,10 +1,13 @@
 import {
-  pgTable, uuid, varchar, integer, decimal, timestamp, pgEnum, uniqueIndex, text, boolean,
+  pgTable, uuid, varchar, integer, decimal, timestamp, date, pgEnum, uniqueIndex, text, boolean,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
-export const roleEnum = pgEnum('role', ['admin', 'promoter', 'superadmin']);
+// El enum de la base conserva 'superadmin' (Postgres no permite quitar un valor
+// con un ALTER simple), pero el código NO lo usa. El rol efectivo es Rol = 'admin' | 'store'.
+export const roleEnum = pgEnum('role', ['superadmin', 'admin', 'store']);
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['factory', 'store']);
-export const orderStatusEnum = pgEnum('order_status', ['pending', 'completed', 'cancelled']);
+export const saleStatusEnum = pgEnum('sale_status', ['scheduled', 'completed', 'cancelled']);
 export const productionStatusEnum = pgEnum('production_status', ['pending', 'completed']);
 export const productTypeEnum = pgEnum('product_type', ['vigueta', 'plastoformo']);
 export const puntalMaterialEnum = pgEnum('puntal_material', ['madera', 'metal', 'solera']);
@@ -26,11 +29,18 @@ export const users = pgTable('users', {
   password: varchar('password', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   lastName: varchar('last_name', { length: 255 }),
-  role: roleEnum('role').notNull().default('promoter'),
+  role: roleEnum('role').notNull().default('store'),
   warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+  // Un usuario desactivado no puede iniciar sesión ni renovar su token.
+  isActive: boolean('is_active').notNull().default(true),
+  // Un usuario protegido no se puede desactivar ni cambiar de rol desde la app.
+  // Se pone en true SOLO desde la base de datos o el script, nunca por la API.
+  isProtected: boolean('is_protected').notNull().default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export type Rol = 'admin' | 'store';
 
 export const products = pgTable('products', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -53,22 +63,6 @@ export const stock = pgTable('stock', {
   warehouseProductUnique: uniqueIndex('stock_warehouse_product_unique').on(table.warehouseId, table.productId),
 }));
 
-export const transfers = pgTable('transfers', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  originId: uuid('origin_id').references(() => warehouses.id).notNull(),
-  destinationId: uuid('destination_id').references(() => warehouses.id).notNull(),
-  userId: uuid('user_id').references(() => users.id).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
-export const transferItems = pgTable('transfer_items', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  transferId: uuid('transfer_id').references(() => transfers.id).notNull(),
-  productId: uuid('product_id').references(() => products.id).notNull(),
-  quantity: integer('quantity').notNull(),
-});
-
 export const clients = pgTable('clients', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
@@ -77,12 +71,24 @@ export const clients = pgTable('clients', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// Una venta nace 'completed' (inmediata: descuenta stock en el acto) o
+// 'scheduled' (programada: NO toca stock hasta que el admin la entrega).
 export const sales = pgTable('sales', {
   id: uuid('id').defaultRandom().primaryKey(),
   clientId: uuid('client_id').references(() => clients.id).notNull(),
-  warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
-  orderId: uuid('order_id').references(() => orders.id),
-  userId: uuid('user_id').references(() => users.id).notNull(),
+  status: saleStatusEnum('status').notNull().default('completed'),
+  // 'YYYY-MM-DD'; obligatorio si es programada. Tipo date (no timestamp) para
+  // que no haya corrimiento de día por zona horaria (Bolivia = UTC-4).
+  deliveryDate: date('delivery_date', { mode: 'string' }),
+  deliveryPlace: varchar('delivery_place', { length: 500 }), // obligatorio si es programada
+  deliveredAt: timestamp('delivered_at'),
+  userId: uuid('user_id').references(() => users.id).notNull(), // quién la registró
+  // Pagos del pedido: el adelanto lo digita el usuario y el saldo se deriva
+  // siempre como total − adelanto (nunca se guarda).
+  adelanto: decimal('adelanto', { precision: 10, scale: 2 }).default('0'),
+  // Fecha de registro del pedido (editable, por defecto hoy); tipo date para
+  // que no haya corrimiento de día por zona horaria.
+  registeredDate: date('registered_date', { mode: 'string' }).notNull().default(sql`CURRENT_DATE`),
   date: timestamp('date').defaultNow(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -92,33 +98,12 @@ export const saleItems = pgTable('sale_items', {
   id: uuid('id').defaultRandom().primaryKey(),
   saleId: uuid('sale_id').references(() => sales.id).notNull(),
   productId: uuid('product_id').references(() => products.id).notNull(),
+  // Origen de la línea: de qué almacén sale el producto (el "dónde recoger").
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
   quantity: integer('quantity').notNull(),
   unitPrice: decimal('unit_price', { precision: 10, scale: 2 }),
-});
-
-export const orders = pgTable('orders', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  clientId: uuid('client_id').references(() => clients.id).notNull(),
-  deliveryPlace: varchar('delivery_place', { length: 500 }).notNull(),
-  deliveryDate: timestamp('delivery_date').notNull(),
-  status: orderStatusEnum('status').notNull().default('pending'),
-  userId: uuid('user_id').references(() => users.id).notNull(),
-  // Adelanto pagado por el cliente al registrar el pedido
-  advance: decimal('advance', { precision: 10, scale: 2 }).notNull().default('0'),
-  // true cuando al completar el pedido se descontó stock (evita descontar dos veces
-  // o restaurar stock que nunca se descontó en pedidos antiguos)
-  stockDeducted: boolean('stock_deducted').notNull().default(false),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
-export const orderItems = pgTable('order_items', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  orderId: uuid('order_id').references(() => orders.id).notNull(),
-  productId: uuid('product_id').references(() => products.id).notNull(),
-  quantity: integer('quantity').notNull(),
-  // Precio unitario capturado en el pedido (editable, se toma del producto)
-  unitPrice: decimal('unit_price', { precision: 10, scale: 2 }),
+  // Longitud de la línea (ej. viguetas de 5 m); texto libre "5 m", "4.5 m".
+  longitud: varchar('longitud', { length: 50 }),
 });
 
 export const productions = pgTable('productions', {
@@ -126,7 +111,8 @@ export const productions = pgTable('productions', {
   productId: uuid('product_id').references(() => products.id).notNull(),
   quantity: integer('quantity').notNull(),
   status: productionStatusEnum('status').notNull().default('pending'),
-  orderId: uuid('order_id').references(() => orders.id),
+  // Opcional: producción destinada a una venta programada.
+  saleId: uuid('sale_id').references(() => sales.id),
   date: timestamp('date').defaultNow(),
   userId: uuid('user_id').references(() => users.id).notNull(),
   notes: varchar('notes', { length: 500 }),
