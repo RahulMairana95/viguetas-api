@@ -88,6 +88,9 @@ export const sales = pgTable('sales', {
   // Fecha de registro del pedido (editable, por defecto hoy); tipo date para
   // que no haya corrimiento de día por zona horaria.
   registeredDate: date('registered_date', { mode: 'string' }).notNull().default(sql`CURRENT_DATE`),
+  // Tipo de venta: inmediata (nace entregada) o programada/pedido (nace pendiente).
+  // Se guarda explícito porque ambas pueden terminar con status 'completed'.
+  esProgramada: boolean('es_programada').notNull().default(false),
   date: timestamp('date').defaultNow(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

@@ -105,6 +105,7 @@ export async function listSales(req: Request, res: Response): Promise<void> {
       deliveryDate: sales.deliveryDate,
       deliveryPlace: sales.deliveryPlace,
       deliveredAt: sales.deliveredAt,
+      esProgramada: sales.esProgramada,
       adelanto: sales.adelanto,
       registeredDate: sales.registeredDate,
       date: sales.date,
@@ -196,6 +197,7 @@ export async function createSale(req: Request, res: Response): Promise<void> {
         deliveryDate: programada ? deliveryDate : null,
         deliveryPlace: programada ? deliveryPlace.trim() : null,
         deliveredAt: programada ? null : new Date(),
+        esProgramada: Boolean(programada),
         adelanto: normalizarAdelanto(adelanto),
         registeredDate: normalizarFechaRegistro(registeredDate),
       }).returning();
