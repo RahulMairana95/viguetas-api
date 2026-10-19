@@ -45,12 +45,27 @@ export const products = pgTable('products', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   productType: productTypeEnum('product_type').notNull(),
-  measurement: varchar('measurement', { length: 50 }).notNull(), // e.g. 1m, 2m, 4.6m, 0.12x0.44x100
+  // Medidas estructuradas por tipo (antes measurement: texto libre):
+  // vigueta → longitud en metros (1.0–12.0, múltiplos de 0.1 = 10 cm);
+  // plastoformo → grosor/ancho/largo en cm (enteros 1–500).
+  // La obligatoriedad por tipo se valida en la ruta, no en la BD.
+  longitud: decimal('longitud', { precision: 4, scale: 1 }), // vigueta, metros
+  grosor: integer('grosor'),   // plastoformo, cm
+  ancho: integer('ancho'),     // plastoformo, cm
+  largo: integer('largo'),     // plastoformo, cm
   price: decimal('price', { precision: 10, scale: 2 }),
   description: text('description'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Una vigueta por longitud y un plastoformo por combinación de medidas.
+  viguetaLongitudUnique: uniqueIndex('products_vigueta_longitud_unique')
+    .on(table.longitud)
+    .where(sql`product_type = 'vigueta' AND longitud IS NOT NULL`),
+  plastoformoDimsUnique: uniqueIndex('products_plastoformo_dims_unique')
+    .on(table.grosor, table.ancho, table.largo)
+    .where(sql`product_type = 'plastoformo' AND grosor IS NOT NULL AND ancho IS NOT NULL AND largo IS NOT NULL`),
+}));
 
 export const stock = pgTable('stock', {
   warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),

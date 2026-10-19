@@ -46,7 +46,10 @@ export async function getPlanningReport(_req: Request, res: Response): Promise<v
       return {
         productId: p.id,
         productName: p.name,
-        measurement: p.measurement,
+        longitud: p.longitud,
+        grosor: p.grosor,
+        ancho: p.ancho,
+        largo: p.largo,
         programado: prog,
         enFabrica: fab,
         enProduccion: prod,

@@ -71,7 +71,10 @@ router.get('/:id', requireRole('admin', 'promoter'), async (req: Request, res: R
             id: products.id,
             name: products.name,
             productType: products.productType,
-            measurement: products.measurement,
+            longitud: products.longitud,
+            grosor: products.grosor,
+            ancho: products.ancho,
+            largo: products.largo,
           },
         })
           .from(saleItems)

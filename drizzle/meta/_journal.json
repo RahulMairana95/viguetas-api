@@ -127,6 +127,20 @@
       "when": 1792200000000,
       "tag": "0017_tipo_venta",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792372800000,
+      "tag": "0018_product_medidas",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792376400000,
+      "tag": "0019_products_medidas_unicas",
+      "breakpoints": true
     }
   ]
 }

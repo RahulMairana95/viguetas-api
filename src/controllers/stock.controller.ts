@@ -49,7 +49,10 @@ export async function listStock(req: Request, res: Response): Promise<void> {
         id: products.id,
         name: products.name,
         productType: products.productType,
-        measurement: products.measurement,
+        longitud: products.longitud,
+        grosor: products.grosor,
+        ancho: products.ancho,
+        largo: products.largo,
       },
     })
       .from(stock)
@@ -94,7 +97,10 @@ export async function getStockItem(req: Request, res: Response): Promise<void> {
         id: products.id,
         name: products.name,
         productType: products.productType,
-        measurement: products.measurement,
+        longitud: products.longitud,
+        grosor: products.grosor,
+        ancho: products.ancho,
+        largo: products.largo,
       },
     })
       .from(stock)
