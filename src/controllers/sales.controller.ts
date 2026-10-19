@@ -14,6 +14,48 @@ type ItemVenta = {
   longitud?: string | null;
 };
 
+// Valida que el usuario pueda operar ventas: necesita almacén asignado y, si
+// es admin, que ese almacén sea de tipo fábrica. Devuelve el almacén propio.
+async function exigirAlmacenVendedor(req: Request, esAdmin: boolean): Promise<string> {
+  const { warehouseId } = resolveWarehouse(req);
+  if (!warehouseId) {
+    throw new HttpError(403, 'Tu usuario no tiene un almacén asignado; no puedes registrar ventas');
+  }
+  if (esAdmin) {
+    const [fila] = await db
+      .select({ type: warehouses.type })
+      .from(warehouses)
+      .where(eq(warehouses.id, warehouseId));
+    if (!fila) {
+      throw new HttpError(403, 'Tu almacén asignado no existe; contacta al administrador');
+    }
+    if (fila.type !== 'factory') {
+      throw new HttpError(
+        403,
+        'Tu almacén asignado debe ser de tipo fábrica para poder vender como admin'
+      );
+    }
+  }
+  return warehouseId;
+}
+
+// Las ventas programadas solo pueden originarse en almacenes de tipo fábrica
+// (las tiendas se surten el día de la entrega, no al programar).
+async function exigirOrigenSoloFabrica(lineas: { warehouseId: string }[]): Promise<void> {
+  const ids = [...new Set(lineas.map((l) => l.warehouseId))];
+  const filas = await db
+    .select({ id: warehouses.id, type: warehouses.type })
+    .from(warehouses)
+    .where(inArray(warehouses.id, ids));
+  const noFabrica = filas.find((f) => f.type !== 'factory');
+  if (noFabrica || filas.length !== ids.length) {
+    throw new HttpError(
+      400,
+      'Las ventas programadas solo pueden originarse en almacenes de tipo fábrica'
+    );
+  }
+}
+
 // Normaliza las líneas del body. Para promoter el origen SIEMPRE es su tienda,
 // sin importar lo que mande el frontend; para admin puede elegir por línea
 // (por defecto, su propio almacén si tiene uno asignado).
@@ -181,13 +223,14 @@ export async function createSale(req: Request, res: Response): Promise<void> {
     if (!clientId) throw new HttpError(400, 'El cliente es requerido');
     if (programada && !esAdmin) throw new HttpError(403, 'Solo un admin puede programar ventas');
 
-    const { warehouseId: origenPropio } = resolveWarehouse(req);
+    const origenPropio = await exigirAlmacenVendedor(req, esAdmin);
 
     const lineas = normalizarLineas(items, origenPropio, esAdmin);
 
     if (programada) {
       if (!deliveryDate) throw new HttpError(400, 'La fecha de entrega es requerida');
       if (!deliveryPlace?.trim()) throw new HttpError(400, 'El lugar de entrega es requerido');
+      await exigirOrigenSoloFabrica(lineas);
     }
 
     const venta = await db.transaction(async (tx) => {
@@ -222,7 +265,7 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
     const id = req.params.id as string;
     const { clientId, deliveryDate, deliveryPlace, adelanto, registeredDate, items } = req.body;
 
-    const { warehouseId: origenPropio } = resolveWarehouse(req);
+    const origenPropio = await exigirAlmacenVendedor(req, true);
 
     await db.transaction(async (tx) => {
       const [v] = await tx.select().from(sales).where(eq(sales.id, id)).for('update');
@@ -241,6 +284,7 @@ export async function updateSale(req: Request, res: Response): Promise<void> {
 
       if (items) {
         const lineas = normalizarLineas(items, origenPropio, true);
+        await exigirOrigenSoloFabrica(lineas);
         await tx.delete(saleItems).where(eq(saleItems.saleId, id));
         await tx.insert(saleItems).values(lineas.map((l) => ({ ...l, saleId: id })));
       }
@@ -262,7 +306,7 @@ export async function deliverSale(req: Request, res: Response): Promise<void> {
     const id = req.params.id as string;
     const { items } = req.body; // opcional: líneas finales, con el origen ajustado el día de la entrega
 
-    const { warehouseId: origenPropio } = resolveWarehouse(req);
+    const origenPropio = await exigirAlmacenVendedor(req, true);
 
     const venta = await db.transaction(async (tx) => {
       const [v] = await tx.select().from(sales).where(eq(sales.id, id)).for('update');
