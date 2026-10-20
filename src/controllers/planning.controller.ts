@@ -42,10 +42,15 @@ export async function getPlanningReport(_req: Request, res: Response): Promise<v
     const mProg = aMapa(programado), mFab = aMapa(enFabrica), mProd = aMapa(enProduccion);
 
     const resultado = listaProductos.map((p) => {
-      const prog = mProg[p.id] || 0, fab = mFab[p.id] || 0, prod = mProd[p.id] || 0;
+      const prog = mProg[p.id] || 0, fab = mFab[p.id] || 0;
+      // Las viguetas se fabrican: la producción pendiente cuenta para bajar el
+      // faltante. Los plastoformos se compran: solo cuenta el stock real.
+      const prod = p.productType === 'vigueta' ? (mProd[p.id] || 0) : 0;
       return {
         productId: p.id,
         productName: p.name,
+        productType: p.productType,
+        serie: p.serie,
         longitud: p.longitud,
         grosor: p.grosor,
         ancho: p.ancho,
@@ -57,9 +62,11 @@ export async function getPlanningReport(_req: Request, res: Response): Promise<v
       };
     });
 
-    // Solo productos con programado, stock en fábrica o producción pendiente
+    // Se muestran: (a) productos con falta real, y (b) productos con pedido
+    // programado ya cubierto (Falta 0) para poder verificar que la demanda
+    // quedó registrada. Se ocultan: solo-stock o producción sin pedido.
     res.json({
-      data: resultado.filter((r) => r.programado > 0 || r.enFabrica > 0 || r.enProduccion > 0),
+      data: resultado.filter((r) => r.falta > 0 || r.programado > 0),
     });
   } catch (error) {
     console.error('Error fetching planning report:', error);

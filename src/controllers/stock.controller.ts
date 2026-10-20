@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
 import { stock, warehouses, products, productTypeEnum } from '../db/schema';
-import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
+import { eq, and, count, ilike, or, desc, sql } from 'drizzle-orm';
 
 export async function listStock(req: Request, res: Response): Promise<void> {
   try {
@@ -150,5 +150,58 @@ export async function upsertStock(req: Request, res: Response): Promise<void> {
     res.status(200).json({ warehouseId, productId, quantity });
   } catch (error) {
     res.status(500).json({ message: 'Error updating stock' });
+  }
+}
+
+// Registrar llegada de plastoformos comprados: SUMA la cantidad al stock del
+// almacén de fábrica (no reemplaza, a diferencia del upsert manual).
+export async function incrementStock(req: Request, res: Response): Promise<void> {
+  try {
+    const { warehouseId, productId, quantity } = req.body;
+
+    if (!warehouseId || !productId || typeof quantity !== 'number' ||
+        !Number.isInteger(quantity) || quantity <= 0) {
+      res.status(400).json({ message: 'warehouseId, productId y quantity (entera mayor a cero) son requeridos' });
+      return;
+    }
+
+    const [producto] = await db.select().from(products).where(eq(products.id, productId));
+    if (!producto) {
+      res.status(404).json({ message: 'Producto no encontrado' });
+      return;
+    }
+    if (producto.productType !== 'plastoformo') {
+      res.status(400).json({ message: 'Esta operación es solo para plastoformos (se compran, no se fabrican)' });
+      return;
+    }
+
+    const [almacen] = await db.select().from(warehouses).where(eq(warehouses.id, warehouseId));
+    if (!almacen) {
+      res.status(404).json({ message: 'Almacén no encontrado' });
+      return;
+    }
+    if (almacen.type !== 'factory') {
+      res.status(400).json({ message: 'La llegada se registra en el almacén de tipo fábrica' });
+      return;
+    }
+
+    const [existente] = await db.select().from(stock)
+      .where(and(eq(stock.warehouseId, warehouseId), eq(stock.productId, productId)));
+
+    if (existente) {
+      await db.update(stock)
+        .set({ quantity: sql`${stock.quantity} + ${quantity}`, updatedAt: new Date() })
+        .where(and(eq(stock.warehouseId, warehouseId), eq(stock.productId, productId)));
+    } else {
+      await db.insert(stock).values({ warehouseId, productId, quantity });
+    }
+
+    const [actualizado] = await db.select().from(stock)
+      .where(and(eq(stock.warehouseId, warehouseId), eq(stock.productId, productId)));
+
+    res.status(201).json({ warehouseId, productId, quantity: actualizado?.quantity ?? quantity });
+  } catch (error) {
+    console.error('Error incrementing stock:', error);
+    res.status(500).json({ message: 'Error registering arrival' });
   }
 }

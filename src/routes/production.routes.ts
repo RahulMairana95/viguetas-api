@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
+import { eq, and, count, ilike, or, desc, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { productions, products, sales, users, stock, warehouses } from '../db/schema';
 import { requireAuth, requireRole } from '../middleware/auth.middleware';
@@ -12,11 +12,17 @@ router.use(requireAuth);
 router.get('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
-    const { status, saleId } = req.query;
+    const { status, saleId, productType } = req.query;
+
+    if (productType && productType !== 'vigueta' && productType !== 'plastoformo') {
+      res.status(400).json({ message: 'productType debe ser vigueta o plastoformo' });
+      return;
+    }
 
     const conditions = [];
     if (status) conditions.push(eq(productions.status, status as 'pending' | 'completed'));
     if (saleId) conditions.push(eq(productions.saleId, saleId as string));
+    if (productType) conditions.push(eq(products.productType, productType as 'vigueta' | 'plastoformo'));
     if (search) conditions.push(or(
       ilike(products.name, `%${search}%`),
       ilike(productions.notes, `%${search}%`)
@@ -71,8 +77,21 @@ router.get('/', requireRole('admin'), async (req: Request, res: Response): Promi
       .limit(limit)
       .offset(offset);
 
+    // Resumen en metros lineales (solo tiene sentido para viguetas).
+    const [resumen] = await db.select({
+      pendienteMl: sql<string>`coalesce(sum(case when ${productions.status} = 'pending' then ${productions.quantity} * ${products.longitud} else 0 end), 0)`,
+      completadaMl: sql<string>`coalesce(sum(case when ${productions.status} = 'completed' then ${productions.quantity} * ${products.longitud} else 0 end), 0)`,
+    })
+      .from(productions)
+      .innerJoin(products, eq(productions.productId, products.id))
+      .where(whereClause);
+
     res.json({
       data: allProductions,
+      summary: {
+        pendingMl: Math.round(Number(resumen?.pendienteMl ?? 0) * 10) / 10,
+        completedMl: Math.round(Number(resumen?.completadaMl ?? 0) * 10) / 10,
+      },
       pagination: {
         page,
         limit,
