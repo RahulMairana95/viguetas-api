@@ -14,6 +14,7 @@ type ProductBody = {
   price?: number | string;
   description?: string | null;
   longitud?: number | string | null;
+  serie?: string | null;
   grosor?: number | string | null;
   ancho?: number | string | null;
   largo?: number | string | null;
@@ -21,15 +22,20 @@ type ProductBody = {
 
 type MedidasValidas = {
   longitud: number | null;
+  serie: string | null;
   grosor: number | null;
   ancho: number | null;
   largo: number | null;
 };
 
+/** Series válidas de vigueta (M1–M7: cantidad de hilos). */
+const SERIES_VIGUETA = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'];
+
 /**
  * Valida y normaliza las medidas según el tipo de producto.
- * - vigueta: longitud en metros, requerida, 1.0–12.0, un solo decimal (múltiplos de 0.1 = 10 cm).
- * - plastoformo: grosor/ancho/largo en cm, requeridos, enteros 1–500.
+ * - vigueta: longitud en metros, requerida, 1.0–12.0, un solo decimal (múltiplos de 0.1 = 10 cm);
+ *   serie requerida (M1–M7).
+ * - plastoformo: grosor/ancho/largo en cm, requeridos, enteros 1–500; sin serie.
  */
 function validarMedidas(
   productType: string,
@@ -47,11 +53,15 @@ function validarMedidas(
     if (Math.abs(longitud * 10 - Math.round(longitud * 10)) > 1e-9) {
       return { ok: false, error: 'La longitud debe tener un solo decimal, en múltiplos de 0.1 m (10 cm). Ej. 3.8 = 3 m 80 cm' };
     }
-    return { ok: true, value: { longitud: Math.round(longitud * 10) / 10, grosor: null, ancho: null, largo: null } };
+    const serie = typeof body.serie === 'string' ? body.serie.trim().toUpperCase() : '';
+    if (!SERIES_VIGUETA.includes(serie)) {
+      return { ok: false, error: `La serie es requerida para viguetas y debe ser una de: ${SERIES_VIGUETA.join(', ')}` };
+    }
+    return { ok: true, value: { longitud: Math.round(longitud * 10) / 10, serie, grosor: null, ancho: null, largo: null } };
   }
 
   if (productType === 'plastoformo') {
-    const value: MedidasValidas = { longitud: null, grosor: null, ancho: null, largo: null };
+    const value: MedidasValidas = { longitud: null, serie: null, grosor: null, ancho: null, largo: null };
     for (const campo of ['grosor', 'ancho', 'largo'] as const) {
       const valor = Number(body[campo]);
       if (body[campo] === undefined || body[campo] === null || body[campo] === '' || Number.isNaN(valor)) {
@@ -70,7 +80,7 @@ function validarMedidas(
 
 /**
  * Busca un producto existente con las mismas medidas por tipo
- * (una vigueta por longitud, un plastoformo por grosor×ancho×largo).
+ * (una vigueta por longitud+serie, un plastoformo por grosor×ancho×largo).
  * `excluirId` permite ignorar el producto que se está editando.
  */
 async function buscarDuplicado(
@@ -80,7 +90,11 @@ async function buscarDuplicado(
 ): Promise<{ id: string; name: string } | undefined> {
   const condiciones =
     productType === 'vigueta'
-      ? [eq(products.productType, 'vigueta'), eq(products.longitud, String(medidas.longitud))]
+      ? [
+          eq(products.productType, 'vigueta'),
+          eq(products.longitud, String(medidas.longitud)),
+          eq(products.serie, medidas.serie!),
+        ]
       : [
           eq(products.productType, 'plastoformo'),
           eq(products.grosor, medidas.grosor!),
@@ -99,7 +113,7 @@ async function buscarDuplicado(
 
 function mensajeDuplicado(productType: string, medidas: MedidasValidas, duplicado: { name: string }): string {
   if (productType === 'vigueta') {
-    return `Ya existe una vigueta con longitud ${medidas.longitud} m ("${duplicado.name}")`;
+    return `Ya existe una vigueta con longitud ${medidas.longitud} m y serie ${medidas.serie} ("${duplicado.name}")`;
   }
   return `Ya existe un plastoformo con medidas ${medidas.grosor}×${medidas.ancho}×${medidas.largo} cm ("${duplicado.name}")`;
 }
@@ -188,6 +202,7 @@ router.post('/', requireRole('admin'), async (req: Request, res: Response): Prom
         description,
         // decimal de drizzle se tipa como string
         longitud: medidas.value.longitud === null ? null : String(medidas.value.longitud),
+        serie: medidas.value.serie,
         grosor: medidas.value.grosor,
         ancho: medidas.value.ancho,
         largo: medidas.value.largo,
@@ -242,6 +257,7 @@ router.put('/:id', requireRole('admin'), async (req: Request, res: Response): Pr
         description,
         // decimal de drizzle se tipa como string
         longitud: medidas.value.longitud === null ? null : String(medidas.value.longitud),
+        serie: medidas.value.serie,
         grosor: medidas.value.grosor,
         ancho: medidas.value.ancho,
         largo: medidas.value.largo,

@@ -50,6 +50,7 @@ export const products = pgTable('products', {
   // plastoformo → grosor/ancho/largo en cm (enteros 1–500).
   // La obligatoriedad por tipo se valida en la ruta, no en la BD.
   longitud: decimal('longitud', { precision: 4, scale: 1 }), // vigueta, metros
+  serie: varchar('serie', { length: 3 }), // vigueta: M1–M7 (hilos)
   grosor: integer('grosor'),   // plastoformo, cm
   ancho: integer('ancho'),     // plastoformo, cm
   largo: integer('largo'),     // plastoformo, cm
@@ -58,10 +59,10 @@ export const products = pgTable('products', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
-  // Una vigueta por longitud y un plastoformo por combinación de medidas.
-  viguetaLongitudUnique: uniqueIndex('products_vigueta_longitud_unique')
-    .on(table.longitud)
-    .where(sql`product_type = 'vigueta' AND longitud IS NOT NULL`),
+  // Una vigueta por longitud+serie y un plastoformo por combinación de medidas.
+  viguetaLongitudSerieUnique: uniqueIndex('products_vigueta_longitud_serie_unique')
+    .on(table.longitud, table.serie)
+    .where(sql`product_type = 'vigueta' AND longitud IS NOT NULL AND serie IS NOT NULL`),
   plastoformoDimsUnique: uniqueIndex('products_plastoformo_dims_unique')
     .on(table.grosor, table.ancho, table.largo)
     .where(sql`product_type = 'plastoformo' AND grosor IS NOT NULL AND ancho IS NOT NULL AND largo IS NOT NULL`),

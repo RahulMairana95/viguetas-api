@@ -141,6 +141,13 @@
       "when": 1792376400000,
       "tag": "0019_products_medidas_unicas",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792470000000,
+      "tag": "0020_product_serie",
+      "breakpoints": true
     }
   ]
 }
