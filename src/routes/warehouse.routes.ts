@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, count, ilike, or, desc } from 'drizzle-orm';
+import { eq, count, ilike, or, asc, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { warehouses, users } from '../db/schema';
 import { requireAuth, requireRole } from '../middleware/auth.middleware';
@@ -22,7 +22,15 @@ router.get('/', requireRole('admin', 'promoter'), async (req: Request, res: Resp
     ) : undefined;
 
     const [{ total }] = await db.select({ total: count() }).from(warehouses).where(whereClause);
-    const data = await db.select().from(warehouses).where(whereClause).orderBy(desc(warehouses.updatedAt)).limit(limit).offset(offset);
+    // Fábrica primero y luego las tiendas (al revés sería fácil elegir mal el
+    // origen de una línea y quedar sin saber de dónde recoger).
+    const data = await db.select().from(warehouses)
+      .where(whereClause)
+      .orderBy(
+        sql`case when ${warehouses.type} = 'factory' then 0 else 1 end`,
+        asc(warehouses.name)
+      )
+      .limit(limit).offset(offset);
 
     res.json({
       data,

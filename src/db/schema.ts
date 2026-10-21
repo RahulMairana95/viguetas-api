@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, varchar, integer, decimal, timestamp, date, pgEnum, uniqueIndex, text, boolean,
+  pgTable, uuid, varchar, integer, decimal, timestamp, date, pgEnum, uniqueIndex, index, text, boolean, serial,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -11,6 +11,8 @@ export const productionStatusEnum = pgEnum('production_status', ['pending', 'com
 export const productTypeEnum = pgEnum('product_type', ['vigueta', 'plastoformo']);
 export const puntalMaterialEnum = pgEnum('puntal_material', ['madera', 'metal', 'solera']);
 export const puntalStatusEnum = pgEnum('puntal_status', ['en_obra', 'en_almacen']);
+// Cotización: abierta (se puede editar/convertir), convertida a pedido o cancelada.
+export const quoteStatusEnum = pgEnum('quote_status', ['open', 'converted', 'cancelled']);
 
 export const warehouses = pgTable('warehouses', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -123,6 +125,55 @@ export const saleItems = pgTable('sale_items', {
   // Longitud de la línea (ej. viguetas de 5 m); texto libre "5 m", "4.5 m".
   longitud: varchar('longitud', { length: 50 }),
 });
+
+// ── Cotizaciones ────────────────────────────────────────────────────────────
+// Presupuesto previo al pedido: NO toca stock, no tiene origen ni fecha de
+// entrega. Registro 100% independiente (patrón "puntales"): SIN foreign keys.
+// Cliente, usuario y producto se guardan como TEXTO (snapshot), así que si se
+// borra un cliente/producto/venta la cotización no cambia ni truena.
+// `sale_id` queda como uuid suelto: referencia blanda al pedido resultante.
+export const quotes = pgTable('quotes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  // Número consecutivo "Cot. 1, Cot. 2…": lo asigna Postgres (serial).
+  numero: serial('numero').notNull().unique(),
+  // Cliente en texto libre (sin relación con la tabla clients).
+  clientName: varchar('client_name', { length: 255 }).notNull(),
+  clientPhone: varchar('client_phone', { length: 50 }),
+  status: quoteStatusEnum('status').notNull().default('open'),
+  // Pedido al que se convirtió: uuid SIN foreign key (solo referencia).
+  saleId: uuid('sale_id'),
+  // Quién cotizó, guardado como texto (sin relación con users).
+  userName: varchar('user_name', { length: 255 }),
+  // Total de la cotización, guardado al momento de crearla.
+  total: decimal('total', { precision: 10, scale: 2 }).notNull().default('0'),
+  notes: varchar('notes', { length: 500 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Líneas: snapshot del producto elegido (nombre, tipo, serie y medidas),
+// porque en una cotización importa lo que se presupuestó ese día.
+export const quoteItems = pgTable('quote_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  // uuid suelto (sin constraint) + índice: la cotización es autónoma.
+  quoteId: uuid('quote_id').notNull(),
+  // Referencia blanda al producto (sin FK): se conserva aunque se borre el
+  // producto; si eso pasa, ya quedaron copiados todos sus datos abajo.
+  productId: uuid('product_id').notNull(),
+  productName: varchar('product_name', { length: 255 }).notNull(),
+  productType: varchar('product_type', { length: 20 }),
+  serie: varchar('serie', { length: 3 }),
+  longitudProducto: decimal('longitud_producto', { precision: 4, scale: 1 }),
+  grosor: integer('grosor'),
+  ancho: integer('ancho'),
+  largo: integer('largo'),
+  quantity: integer('quantity').notNull(),
+  unitPrice: decimal('unit_price', { precision: 10, scale: 2 }),
+  // Longitud de la línea (ej. viguetas de 5 m), como en sale_items.
+  longitud: varchar('longitud', { length: 50 }),
+}, (table) => [
+  index('quote_items_quote_id_idx').on(table.quoteId),
+]);
 
 export const productions = pgTable('productions', {
   id: uuid('id').defaultRandom().primaryKey(),
