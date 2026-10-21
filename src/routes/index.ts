@@ -9,6 +9,7 @@ import saleRoutes from './sale.routes';
 import puntalRoutes from './puntal.routes';
 import productionRoutes from './production.routes';
 import planningRoutes from './planning.routes';
+import quoteRoutes from './quote.routes';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -22,5 +23,6 @@ router.use('/sales', saleRoutes);
 router.use('/puntales', puntalRoutes);
 router.use('/productions', productionRoutes);
 router.use('/planning', planningRoutes);
+router.use('/quotes', quoteRoutes);
 
 export default router;

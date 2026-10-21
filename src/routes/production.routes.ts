@@ -52,6 +52,7 @@ router.get('/', requireRole('admin'), async (req: Request, res: Response): Promi
         id: products.id,
         name: products.name,
         productType: products.productType,
+        serie: products.serie,
         longitud: products.longitud,
         grosor: products.grosor,
         ancho: products.ancho,
