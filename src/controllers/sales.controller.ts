@@ -181,6 +181,8 @@ async function hidratarItems<T extends { id: string }>(ventas: T[]) {
     saleId: saleItems.saleId,
     productId: saleItems.productId,
     productName: products.name,
+    productType: products.productType,
+    serie: products.serie,
     longitudProducto: products.longitud,
     grosor: products.grosor,
     ancho: products.ancho,
