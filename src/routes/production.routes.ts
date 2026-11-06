@@ -1,22 +1,28 @@
 import { Router, Request, Response } from 'express';
-import { eq, and, count, ilike, or, desc } from 'drizzle-orm';
+import { eq, and, count, ilike, or, desc, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { productions, products, orders, users, stock, warehouses } from '../db/schema';
-import { authMiddleware, roleMiddleware } from '../middleware/auth.middleware';
+import { productions, products, sales, users, stock, warehouses } from '../db/schema';
+import { requireAuth, requireRole } from '../middleware/auth.middleware';
 
 const router: ReturnType<typeof Router> = Router();
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
 // GET /api/productions?search=...
-router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const search = (req.query.search as string)?.replace(/['"]/g, '').trim() || '';
-    const { status, orderId } = req.query;
+    const { status, saleId, productType } = req.query;
+
+    if (productType && productType !== 'vigueta' && productType !== 'plastoformo') {
+      res.status(400).json({ message: 'productType debe ser vigueta o plastoformo' });
+      return;
+    }
 
     const conditions = [];
     if (status) conditions.push(eq(productions.status, status as 'pending' | 'completed'));
-    if (orderId) conditions.push(eq(productions.orderId, orderId as string));
+    if (saleId) conditions.push(eq(productions.saleId, saleId as string));
+    if (productType) conditions.push(eq(products.productType, productType as 'vigueta' | 'plastoformo'));
     if (search) conditions.push(or(
       ilike(products.name, `%${search}%`),
       ilike(productions.notes, `%${search}%`)
@@ -38,7 +44,7 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
       productId: productions.productId,
       quantity: productions.quantity,
       status: productions.status,
-      orderId: productions.orderId,
+      saleId: productions.saleId,
       date: productions.date,
       userId: productions.userId,
       notes: productions.notes,
@@ -46,12 +52,17 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
         id: products.id,
         name: products.name,
         productType: products.productType,
-        measurement: products.measurement,
+        serie: products.serie,
+        longitud: products.longitud,
+        grosor: products.grosor,
+        ancho: products.ancho,
+        largo: products.largo,
       },
-      order: {
-        id: orders.id,
-        deliveryPlace: orders.deliveryPlace,
-        status: orders.status,
+      sale: {
+        id: sales.id,
+        deliveryPlace: sales.deliveryPlace,
+        deliveryDate: sales.deliveryDate,
+        status: sales.status,
       },
       user: {
         id: users.id,
@@ -60,15 +71,28 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
     })
       .from(productions)
       .innerJoin(products, eq(productions.productId, products.id))
-      .leftJoin(orders, eq(productions.orderId, orders.id))
+      .leftJoin(sales, eq(productions.saleId, sales.id))
       .innerJoin(users, eq(productions.userId, users.id))
       .where(whereClause)
       .orderBy(desc(productions.updatedAt))
       .limit(limit)
       .offset(offset);
 
+    // Resumen en metros lineales (solo tiene sentido para viguetas).
+    const [resumen] = await db.select({
+      pendienteMl: sql<string>`coalesce(sum(case when ${productions.status} = 'pending' then ${productions.quantity} * ${products.longitud} else 0 end), 0)`,
+      completadaMl: sql<string>`coalesce(sum(case when ${productions.status} = 'completed' then ${productions.quantity} * ${products.longitud} else 0 end), 0)`,
+    })
+      .from(productions)
+      .innerJoin(products, eq(productions.productId, products.id))
+      .where(whereClause);
+
     res.json({
       data: allProductions,
+      summary: {
+        pendingMl: Math.round(Number(resumen?.pendienteMl ?? 0) * 10) / 10,
+        completedMl: Math.round(Number(resumen?.completadaMl ?? 0) * 10) / 10,
+      },
       pagination: {
         page,
         limit,
@@ -81,10 +105,10 @@ router.get('/', roleMiddleware('admin'), async (req: Request, res: Response): Pr
   }
 });
 
-// POST /api/productions
-router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+// POST /api/productions — saleId es opcional (producción para una venta programada)
+router.post('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { productId, quantity, orderId, notes } = req.body;
+    const { productId, quantity, saleId, notes } = req.body;
 
     if (!productId || typeof quantity !== 'number' ||
         !Number.isInteger(quantity) || quantity <= 0) {
@@ -92,10 +116,10 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
       return;
     }
 
-    if (orderId) {
-      const [pedido] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, orderId));
-      if (!pedido) {
-        res.status(400).json({ message: 'El pedido indicado no existe' });
+    if (saleId) {
+      const [venta] = await db.select({ id: sales.id }).from(sales).where(eq(sales.id, saleId));
+      if (!venta) {
+        res.status(400).json({ message: 'La venta indicada no existe' });
         return;
       }
     }
@@ -104,9 +128,9 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
       .values({
         productId,
         quantity,
-        orderId: orderId || null,
+        saleId: saleId || null,
         notes,
-        userId: req.user!.userId,
+        userId: req.userId,
       })
       .returning();
 
@@ -116,8 +140,8 @@ router.post('/', roleMiddleware('admin'), async (req: Request, res: Response): P
   }
 });
 
-// PATCH /api/productions/:id/complete
-router.patch('/:id/complete', roleMiddleware('admin'), async (req: Request, res: Response): Promise<void> => {
+// PATCH /api/productions/:id/complete — suma al stock del almacén fábrica
+router.patch('/:id/complete', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
 
