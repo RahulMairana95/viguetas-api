@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { eq } from 'drizzle-orm';
 
 import { db } from '../db';
-import { users, refreshTokens, Rol } from '../db/schema';
+import { users, warehouses, refreshTokens, Rol } from '../db/schema';
 import { config } from '../config';
 import { requireAuth, AuthPayload } from '../middleware/auth.middleware';
 import { validateRoleWarehouse } from '../lib/validateRoleWarehouse';
@@ -76,7 +76,21 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    const [user] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        password: users.password,
+        name: users.name,
+        lastName: users.lastName,
+        role: users.role,
+        warehouseId: users.warehouseId,
+        warehouseName: warehouses.name,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .leftJoin(warehouses, eq(users.warehouseId, warehouses.id))
+      .where(eq(users.email, email));
     if (!user) {
       res.status(401).json({ message: 'Invalid credentials', status: 'error', data: null });
       return;
@@ -121,6 +135,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         lastName: user.lastName,
         role: user.role,
         warehouseId: user.warehouseId,
+        warehouseName: user.warehouseName,
         accessToken,
         refreshToken,
       },
@@ -191,16 +206,21 @@ router.post('/logout', requireAuth, async (req: Request, res: Response): Promise
 // GET /api/auth/profile
 router.get('/profile', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const [user] = await db.select({
-      id: users.id,
-      email: users.email,
-      name: users.name,
-      lastName: users.lastName,
-      role: users.role,
-      warehouseId: users.warehouseId,
-      isActive: users.isActive,
-      createdAt: users.createdAt,
-    }).from(users).where(eq(users.id, req.userId));
+    const [user] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        lastName: users.lastName,
+        role: users.role,
+        warehouseId: users.warehouseId,
+        warehouseName: warehouses.name,
+        isActive: users.isActive,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .leftJoin(warehouses, eq(users.warehouseId, warehouses.id))
+      .where(eq(users.id, req.userId));
 
     if (!user) {
       res.status(404).json({ message: 'User not found', status: 'error', data: null });
