@@ -124,7 +124,25 @@ export async function getStockItem(req: Request, res: Response): Promise<void> {
 
 export async function upsertStock(req: Request, res: Response): Promise<void> {
   try {
-    const { warehouseId, productId, quantity } = req.body;
+    const { productId, quantity } = req.body;
+    const esAdmin = req.userRol === 'admin';
+
+    // La tienda (promoter) solo puede ajustar su propio almacén: el almacén
+    // del body se ignora si coincide con el suyo, y se rechaza si apunta a
+    // otro. El admin sí puede elegir cualquier almacén en el body, así carga
+    // el inventario inicial y corrige conteos físicos de cualquier tienda.
+    let warehouseId: string | undefined;
+    if (esAdmin) {
+      warehouseId = req.body.warehouseId;
+    } else if (!req.userAlmacenId) {
+      res.status(403).json({ message: 'Tu usuario no tiene un almacén asignado; no puedes ajustar stock' });
+      return;
+    } else if (req.body.warehouseId && req.body.warehouseId !== req.userAlmacenId) {
+      res.status(403).json({ message: 'Solo puedes ajustar el stock de tu propio almacén' });
+      return;
+    } else {
+      warehouseId = req.userAlmacenId;
+    }
 
     if (!warehouseId || !productId || quantity === undefined) {
       res.status(400).json({ message: 'warehouseId, productId y quantity son requeridos' });
