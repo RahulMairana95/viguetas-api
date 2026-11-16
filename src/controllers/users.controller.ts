@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { eq, or, ilike, count } from 'drizzle-orm';
+import { eq, and, or, ilike, count } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { users, warehouses, refreshTokens, Rol } from '../db/schema';
@@ -31,11 +31,14 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
     const limit = parseInt(req.query.limit as string) || 10;
     const offset = (page - 1) * limit;
 
-    const whereClause = search ? or(
+    // Solo usuarios activos
+    const activeClause = eq(users.isActive, true);
+    const searchClause = search ? or(
       ilike(users.name, `%${search}%`),
       ilike(users.lastName, `%${search}%`),
       ilike(users.email, `%${search}%`)
     ) : undefined;
+    const whereClause = searchClause ? and(activeClause, searchClause) : activeClause;
 
     const [{ total }] = await db.select({ total: count() }).from(users).where(whereClause);
 
