@@ -10,7 +10,9 @@ router.get('/', requireRole('admin', 'promoter'), listStock);
 router.get('/:warehouseId/:productId', requireRole('admin', 'promoter'), getStockItem);
 // Ajuste manual de stock: el admin elige el almacén en el body, así puede
 // cargar el inventario inicial de cualquier tienda y corregir conteos físicos.
-router.post('/', requireRole('admin'), upsertStock);
+// La tienda (promoter) también ajusta, pero el controlador la obliga a hacerlo
+// solo sobre su propio almacén.
+router.post('/', requireRole('admin', 'promoter'), upsertStock);
 // Llegada de plastoformos comprados: suma al stock de fábrica.
 router.post('/increment', requireRole('admin'), incrementStock);
 
