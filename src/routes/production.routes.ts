@@ -67,6 +67,7 @@ router.get('/', requireRole('admin'), async (req: Request, res: Response): Promi
       user: {
         id: users.id,
         name: users.name,
+        lastName: users.lastName,
       },
     })
       .from(productions)
