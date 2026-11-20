@@ -1,0 +1,67 @@
+name: Weekly DB backup
+
+# Backup semanal de las bases de datos (Neon dev + prod) a Backblaze B2.
+# Corre en la nube: no requiere ninguna computadora encendida.
+# 07:00 UTC = domingo 03:00 (UTC-4, horario de Bolivia/Perú).
+# Los .dump se suben CIFRADOS (AES-256-CBC + pbkdf2) — nunca en claro.
+on:
+  schedule:
+    - cron: '0 7 * * 0'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install PostgreSQL 18 client
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common curl ca-certificates
+          sudo bash -c 'curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg'
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          pg_dump --version
+
+      - name: Dump both databases and encrypt
+        env:
+          DATABASE_URL_DEV: ${{ secrets.DATABASE_URL_DEV }}
+          DATABASE_URL_PROD: ${{ secrets.DATABASE_URL_PROD }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          ts=$(date -u +%Y-%m-%d_%H%M)
+          for env_name in dev prod; do
+            var="DATABASE_URL_$(echo "$env_name" | tr '[:lower:]' '[:upper:]')"
+            url="${!var}"
+            if [ -z "$url" ]; then
+              echo "::error::Secret $var vacio"
+              exit 1
+            fi
+            echo "== dumping $env_name =="
+            pg_dump --format=custom --no-owner --no-privileges "$url" \
+              | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE \
+              -out "out/viguetas-${env_name}-${ts}.dump.enc"
+            echo "OK: $(du -h "out/viguetas-${env_name}-${ts}.dump.enc" | cut -f1)"
+          done
+
+      - name: Upload to Backblaze B2 (S3 API)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          AWS_DEFAULT_REGION: us-west-000
+          AWS_EC2_METADATA_DISABLED: 'true'
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          B2_ENDPOINT: ${{ secrets.B2_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          aws s3 cp out/ "s3://${B2_BUCKET}/backups/" --recursive \
+            --endpoint-url "${B2_ENDPOINT}"
+          echo "== contenido del bucket =="
+          aws s3 ls "s3://${B2_BUCKET}/backups/" --endpoint-url "${B2_ENDPOINT}"
