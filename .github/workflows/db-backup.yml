@@ -1,6 +1,6 @@
 name: Weekly DB backup
 
-# Backup semanal de las bases de datos (Neon dev + prod) a Backblaze B2.
+# Backup semanal de la base de datos de producción (Neon) a Backblaze B2.
 # Corre en la nube: no requiere ninguna computadora encendida.
 # 07:00 UTC = domingo 03:00 (UTC-4, horario de Bolivia/Perú).
 # Los .dump se suben CIFRADOS (AES-256-CBC + pbkdf2) — nunca en claro.
@@ -28,28 +28,23 @@ jobs:
           sudo apt-get install -y -qq postgresql-client-18
           pg_dump --version
 
-      - name: Dump both databases and encrypt
+      - name: Dump production database and encrypt
         env:
-          DATABASE_URL_DEV: ${{ secrets.DATABASE_URL_DEV }}
           DATABASE_URL_PROD: ${{ secrets.DATABASE_URL_PROD }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
           set -euo pipefail
           mkdir -p out
           ts=$(date -u +%Y-%m-%d_%H%M)
-          for env_name in dev prod; do
-            var="DATABASE_URL_$(echo "$env_name" | tr '[:lower:]' '[:upper:]')"
-            url="${!var}"
-            if [ -z "$url" ]; then
-              echo "::error::Secret $var vacio"
-              exit 1
-            fi
-            echo "== dumping $env_name =="
-            pg_dump --format=custom --no-owner --no-privileges "$url" \
-              | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE \
-              -out "out/viguetas-${env_name}-${ts}.dump.enc"
-            echo "OK: $(du -h "out/viguetas-${env_name}-${ts}.dump.enc" | cut -f1)"
-          done
+          if [ -z "$DATABASE_URL_PROD" ]; then
+            echo "::error::Secret DATABASE_URL_PROD vacio"
+            exit 1
+          fi
+          echo "== dumping prod =="
+          pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL_PROD" \
+            | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE \
+            -out "out/viguetas-prod-${ts}.dump.enc"
+          echo "OK: $(du -h "out/viguetas-prod-${ts}.dump.enc" | cut -f1)"
 
       - name: Upload to Backblaze B2 (S3 API)
         env:
